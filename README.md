@@ -20,8 +20,9 @@ A curated collection of useful bash scripts.
 - **`tiff-to-png.sh`** - Convert TIFF images to PNG format
 
 ### 📱 OCR & Text Recognition
-- **`ocr-pdf.sh`** - Perform OCR on PDF files
-- **`ocr-pdf-textlayer.sh`** - Add searchable text layer to PDF files
+- **`ocr-convert.sh`** - 🌟 Universal OCR tool (PDF/images → searchable PDF/text, multi-language)
+- **`ocr-pdf.sh`** - ⚠️ Legacy: Simple OCR text extraction
+- **`ocr-pdf-textlayer.sh`** - ⚠️ Legacy: Add text layer to PDFs
 
 ### 💾 Backup & Synchronization
 - **`auto-backup.sh`** - Automated backup script
@@ -70,6 +71,12 @@ Most scripts require common Linux utilities. Specific requirements:
 
 # Sync with configuration profile and VPN
 ./sync-laptop-desktop.sh --profile munro-desktop --verbose
+
+# OCR convert scanned PDF to searchable PDF
+./ocr-convert.sh document.pdf
+
+# Extract text from multiple PDFs
+./ocr-convert.sh --output text *.pdf
 ```
 
 ## 📚 Documentation
