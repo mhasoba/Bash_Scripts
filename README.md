@@ -9,6 +9,7 @@ A curated collection of useful bash scripts.
 - **`docx-to-pdf.sh`** - Convert DOCX files to PDF format
 - **`markdown-to-pdf.sh`** - Convert Markdown files to PDF
 - **`merge-pdfs.sh`** - Merge multiple PDF files into one
+- **`pdf-to-text.sh`** - Convert PDF files to plain text with layout options
 
 ### 🖼️ Image Processing
 - **`pdf-to-png.sh`** - Convert PDF pages to PNG images
@@ -77,6 +78,15 @@ Most scripts require common Linux utilities. Specific requirements:
 
 # Extract text from multiple PDFs
 ./ocr-convert.sh --output text *.pdf
+
+# Convert PDF to plain text with layout preservation
+./pdf-to-text.sh document.pdf
+
+# Extract first 10 pages to text
+./pdf-to-text.sh --pages 1-10 report.pdf
+
+# Batch convert PDFs to text (raw mode, no layout)
+./pdf-to-text.sh --layout raw --output-dir ./text_files/ *.pdf
 ```
 
 ## 📚 Documentation
