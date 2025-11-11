@@ -326,14 +326,26 @@ ocr_to_pdf() {
     # Run OCRmyPDF
     print_info "Running: ocrmypdf ${flags[*]} \"$input\" \"$output\""
     
-    if ocrmypdf "${flags[@]}" "$input" "$output" 2>&1 | grep -v "^$"; then
+    # Capture output and exit code separately to avoid pipe exit code issues
+    local ocr_output
+    local ocr_exit_code
+    ocr_output=$(ocrmypdf "${flags[@]}" "$input" "$output" 2>&1)
+    ocr_exit_code=$?
+    
+    # Display output (filter empty lines)
+    if [[ -n "$ocr_output" ]]; then
+        echo "$ocr_output" | grep -v "^$" || true
+    fi
+    
+    # OCRmyPDF exit codes: 0=success, 10=warning (file ok but has issues like non-PDF/A)
+    if [[ $ocr_exit_code -eq 0 || $ocr_exit_code -eq 10 ]]; then
         print_success "Created searchable PDF: $(basename "$output")"
         
         # Clean up temporary input if it was an image conversion
         [[ "$is_temp_input" == "true" && "$CLEAN" == "true" ]] && rm -f "$input"
         return 0
     else
-        print_error "OCR failed for: $(basename "$input")"
+        print_error "OCR failed for: $(basename "$input") (exit code: $ocr_exit_code)"
         return 1
     fi
 }
@@ -749,18 +761,29 @@ main() {
     # Process files
     local success_count=0
     local fail_count=0
+    local failed_files=()
     
     for file in "${INPUT_FILES[@]}"; do
         if process_file "$file"; then
-            ((success_count++))
+            success_count=$((success_count + 1))
         else
-            ((fail_count++))
+            fail_count=$((fail_count + 1))
+            failed_files+=("$file")
         fi
     done
     
     # Summary
     echo
-    print_success "Completed: $success_count succeeded, $fail_count failed"
+    if [[ $fail_count -eq 0 ]]; then
+        print_success "Completed: $success_count succeeded, $fail_count failed"
+    else
+        print_warning "Completed: $success_count succeeded, $fail_count failed"
+        echo
+        echo -e "${RED}Failed files:${NC}"
+        for failed_file in "${failed_files[@]}"; do
+            echo "  - $(basename "$failed_file")"
+        done
+    fi
     
     # Cleanup temp directory
     [[ "$CLEAN" == "true" ]] && rm -rf "$TMPDIR_BASE"
