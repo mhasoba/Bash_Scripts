@@ -8,6 +8,7 @@ A curated collection of useful bash scripts.
 - **`compile-latex.sh`** - Enhanced LaTeX compilation script with bibliography support
 - **`docx-to-pdf.sh`** - Convert DOCX files to PDF format
 - **`markdown-to-pdf.sh`** - Convert Markdown files to PDF
+- **`markdown-to-html.sh`** - Convert Markdown files to HTML
 - **`merge-pdfs.sh`** - Merge multiple PDF files into one
 - **`pdf-to-text.sh`** - Convert PDF files to plain text with layout options
 
@@ -56,6 +57,25 @@ Most scripts require common Linux utilities. Specific requirements:
 2. Make them executable: `chmod +x *.sh`
 3. Optionally, add the directory to your PATH
 
+User-local install (recommended):
+```bash
+# make a personal bin and symlink the utilities there
+mkdir -p "$HOME/bin"
+ln -sf /path/to/this/directory/markdown-to-pdf.sh "$HOME/bin/markdown-to-pdf"
+ln -sf /path/to/this/directory/markdown-to-html.sh "$HOME/bin/markdown-to-html"
+chmod +x /path/to/this/directory/*.sh
+# ensure ~/bin is in your PATH (add once to ~/.profile or ~/.bashrc)
+grep -qxF 'export PATH="$HOME/bin:$PATH"' ~/.profile || echo 'export PATH="$HOME/bin:$PATH"' >> ~/.profile
+source ~/.profile
+```
+
+System-wide install (requires sudo):
+```bash
+sudo ln -sf /path/to/this/directory/markdown-to-pdf.sh /usr/local/bin/markdown-to-pdf
+sudo ln -sf /path/to/this/directory/markdown-to-html.sh /usr/local/bin/markdown-to-html
+sudo chmod +x /path/to/this/directory/*.sh
+```
+
 ### Usage Examples
 ```bash
 # Compile LaTeX document with bibliography and view
@@ -87,6 +107,45 @@ Most scripts require common Linux utilities. Specific requirements:
 
 # Batch convert PDFs to text (raw mode, no layout)
 ./pdf-to-text.sh --layout raw --output-dir ./text_files/ *.pdf
+
+## `markdown-to-pdf.sh`
+
+Convert Markdown files to PDF. The script prefers `pandoc` (direct MD→PDF) and falls back to `markdown` + `wkhtmltopdf`.
+
+Prerequisites:
+- `pandoc` (recommended) or `markdown` and `wkhtmltopdf`
+- `mktemp` (standard on Linux)
+
+Single-file usage:
+```bash
+# output filename optional
+./markdown-to-pdf.sh notes.md
+./markdown-to-pdf.sh notes.md my-notes.pdf
+```
+
+Batch (sequential, safe for spaces):
+```bash
+while IFS= read -r -d '' file; do
+	./markdown-to-pdf.sh "$file"
+done < <(find . -maxdepth 1 -name '*.md' -print0)
+```
+
+Parallel (xargs, limit concurrency):
+```bash
+find . -maxdepth 1 -name '*.md' -print0 | xargs -0 -n1 -P4 -I{} ./markdown-to-pdf.sh "{}"
+```
+
+Recursive find:
+```bash
+find . -type f -name '*.md' -exec ./markdown-to-pdf.sh {} \;
+```
+
+If you'd like a built-in `--parallel` or output-dir option added to the script, open an issue or request to implement it.
+
+Notes and tips:
+- The script now prefers `pandoc` with `xelatex` and will attempt to select a Unicode-capable `mainfont` and an emoji/symbol font when available. If you still see "Missing character" warnings for symbols like ✅ or ≥, install a broad Unicode font such as `fonts-noto-serif` and an emoji font like `fonts-noto-color-emoji`.
+- You can override the PDF engine via the `PDF_ENGINE` environment variable, e.g. `PDF_ENGINE=pdflatex markdown-to-pdf file.md`.
+- When running from other directories prefer the command name (no `./`), e.g. `find . -type f -name '*.md' -exec markdown-to-pdf {} +` so the tool is resolved via your `PATH`.
 ```
 
 ## 📚 Documentation
@@ -114,3 +173,40 @@ These scripts are provided as-is for educational and practical use.
 ---
 
 *💡 **Tip**: Check the individual script files for specific usage instructions and options.*
+
+## `md2pdf.sh`
+
+A small wrapper that converts multiple Markdown files to PDF using `markdown-to-pdf.sh`.
+
+Features:
+- Accepts multiple input files by default.
+- `-j N` to run up to N conversions in parallel (requires `xargs -P`).
+- `-o DIR` to place output PDFs in a specified directory.
+
+Examples:
+```bash
+# Convert all markdown files sequentially
+./md2pdf.sh *.md
+
+# Convert into an output directory with 4 parallel jobs
+./md2pdf.sh -j 4 -o pdfs *.md
+
+# Convert specific files
+./md2pdf.sh README.md notes/meeting.md
+```
+
+## `markdown-to-html.sh`
+
+Convert Markdown to HTML. Prefers `pandoc` and falls back to the classic `markdown` utility.
+
+Examples:
+```bash
+# Convert a single file
+markdown-to-html README.md
+
+# Read from stdin and write to stdout
+cat README.md | markdown-to-html -
+
+# Convert many files
+find . -type f -name '*.md' -exec markdown-to-html {} +
+```
