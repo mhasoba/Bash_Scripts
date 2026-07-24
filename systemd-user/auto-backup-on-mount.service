@@ -1,0 +1,11 @@
+[Unit]
+Description=Launch auto-backup prompt when backup disk mount appears
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/mhasoba/Documents/Code_n_script/Bash
+ExecStart=/usr/bin/bash /home/mhasoba/Documents/Code_n_script/Bash/auto-backup-on-mount.sh
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for backup disk mount sentinel
+
+[Path]
+PathChanged=/run/media/%u
+PathChanged=/media/%u
+PathChanged=/media
+Unit=auto-backup-on-mount.service
+
+[Install]
+WantedBy=default.target

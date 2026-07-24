@@ -28,7 +28,9 @@ A curated collection of useful bash scripts.
 
 ### 💾 Backup & Synchronization
 - **`auto-backup.sh`** - Automated backup script
-- **`backup.sh`** - General purpose backup utility
+- **`auto-backup-on-mount.sh`** - Helper for systemd user mount triggers; resolves the mounted device and launches `auto-backup.sh`
+- **`backup.sh`** - Snapshot-based backup utility with locking, mount verification, and dry-run support
+- **`backup-excludes.txt`** - Managed rsync exclusion list for `backup.sh`
 - **`backup-mount.sh`** - Backup with mount operations
 - **`sync-laptop-desktop.sh`** - Universal sync tool with VPN support (unison/rsync/rclone)
 
@@ -107,6 +109,7 @@ sudo chmod +x /path/to/this/directory/*.sh
 
 # Batch convert PDFs to text (raw mode, no layout)
 ./pdf-to-text.sh --layout raw --output-dir ./text_files/ *.pdf
+```
 
 ## `markdown-to-pdf.sh`
 
@@ -173,6 +176,74 @@ These scripts are provided as-is for educational and practical use.
 ---
 
 *💡 **Tip**: Check the individual script files for specific usage instructions and options.*
+
+## Auto-backup on mount via systemd user units
+
+This repository includes a ready-to-enable systemd user `.path` + `.service` pair in `systemd-user/`.
+The path unit watches for a mounted directory containing `MhasoBkp`, then `auto-backup-on-mount.sh` resolves the backing device and launches `auto-backup.sh` in `gnome-terminal`.
+
+Install the units into your user systemd directory:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd-user/auto-backup-on-mount.path ~/.config/systemd/user/
+cp systemd-user/auto-backup-on-mount.service ~/.config/systemd/user/
+systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR
+systemctl --user daemon-reload
+systemctl --user enable --now auto-backup-on-mount.path
+```
+
+Check status and logs:
+
+```bash
+systemctl --user status auto-backup-on-mount.path
+journalctl --user -u auto-backup-on-mount.service -n 50 --no-pager
+```
+
+Notes:
+- The watched sentinel directory name is `MhasoBkp`, matching the existing check in `auto-backup.sh`.
+- The helper script may also be run manually after `chmod +x auto-backup-on-mount.sh`.
+- The service inherits GUI session variables from the user systemd manager, so re-run `systemctl --user import-environment ...` after login if `gnome-terminal` does not appear.
+
+## `backup.sh`
+
+The backup script now writes versioned snapshots under a host-specific directory on the mounted backup disk:
+
+```text
+<mount-point>/backups/<hostname>/home/
+```
+
+Within that tree it creates:
+- `snapshots/<timestamp>` for each completed backup
+- `latest` symlink pointing to the most recent completed snapshot
+- `.incomplete-current` as a reusable staging directory for interrupted runs
+
+Key behavior:
+- Verifies the destination path is an active mount point before running.
+- Uses a lock file to prevent concurrent backups.
+- Supports `--dry-run` for safe preview runs.
+- Keeps the newest 14 completed snapshots by default and prunes older ones after a successful backup.
+- Supports `--retain-count N` to change how many completed snapshots are kept. Use `0` to disable pruning.
+- Stores logs and summary files in the log directory you pass as the second argument.
+- Uses `backup-excludes.txt` for rsync exclusions.
+- Treats rsync exit code `24` as a warning instead of a hard failure.
+- Requires a snapshot-capable Linux filesystem on the backup disk. `ext4`, `xfs`, `btrfs`, and `zfs` are supported; `vfat`/FAT-style filesystems are not.
+- Fails fast with a clear message if the mounted backup disk cannot store symlinks/hardlinks.
+
+Examples:
+
+```bash
+# Preview the next backup without writing any snapshot data
+./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --dry-run
+
+# Keep the newest 30 completed snapshots
+./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --retain-count 30
+
+# Run a snapshot backup and auto-unmount on success
+./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --auto-unmount
+```
+
+If you are using the automatic mount trigger, keep the `MhasoBkp` sentinel directory on the backup disk so `auto-backup-on-mount.sh` can detect the drive and launch `auto-backup.sh`.
 
 ## `md2pdf.sh`
 
