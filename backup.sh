@@ -7,17 +7,19 @@
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
 # === START: Configuration ===
-SOURCE_DIR="/home/mhasoba"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="${SOURCE_DIR:-${HOME:-/home/mhasoba}}"
 SCRIPT_NAME="$(basename "$0")"
 LOG_PREFIX="rsync"
 DATE_FORMAT="+%F-%H%M"
 AUTO_UNMOUNT=false  # Default: don't auto-unmount
 HOST_NAME="$(hostname -s 2>/dev/null || hostname || echo unknown-host)"
 BACKUP_NAMESPACE="backups"
-EXCLUDE_FILE="/home/mhasoba/Documents/Code_n_script/Bash/backup-excludes.txt"
+EXCLUDE_FILE="${EXCLUDE_FILE:-$SCRIPT_DIR/backup-excludes.txt}"
 MIN_INCREMENTAL_FREE_BYTES=$((5 * 1024 * 1024 * 1024))
 DRY_RUN=false
 SNAPSHOT_RETENTION_COUNT=14
+EXPORT_SYSTEM_STATE=true
 # === END: Configuration ===
 
 # === START: Logging Functions ===
@@ -37,7 +39,7 @@ log_to_file() {
 # === START: Show Help Function ===
 show_help() {
 cat << EOF
-Usage: $SCRIPT_NAME BackupDestinationPath LogFileDestinationPath [--dry-run] [--retain-count N] [--auto-unmount]
+Usage: $SCRIPT_NAME BackupDestinationPath LogFileDestinationPath [--dry-run] [--retain-count N] [--auto-unmount] [--no-state-export]
 
 Description:
   Backs up $SOURCE_DIR to the specified destination with comprehensive logging.
@@ -52,6 +54,7 @@ Options:
     --dry-run                Show what would change without writing backup data
     --retain-count N         Keep only the newest N completed snapshots (0 disables pruning)
   --auto-unmount          Automatically unmount the backup drive after completion
+        --no-state-export       Skip machine-state export files (package lists/settings)
 
 Examples:
   $SCRIPT_NAME /media/myBackup ~/bkplogs/
@@ -243,6 +246,63 @@ validate_non_negative_integer() {
 }
 # === END: Validation Functions ===
 
+# === START: Restore State Export ===
+export_system_state() {
+    local export_root="$1"
+
+    mkdir -p "$export_root" || return 1
+    mkdir -p "$export_root/etc" || return 1
+
+    {
+        echo "generated_at=$(date '+%Y-%m-%dT%H:%M:%S%z')"
+        echo "host=$HOST_NAME"
+        echo "user=${USER:-unknown}"
+        echo "source_dir=$SOURCE_DIR"
+    } > "$export_root/metadata.txt"
+
+    if command -v dpkg-query &> /dev/null; then
+        dpkg-query -W -f='${binary:Package}\t${Version}\n' > "$export_root/dpkg-package-versions.tsv" 2>/dev/null || true
+    fi
+
+    if command -v apt-mark &> /dev/null; then
+        apt-mark showmanual > "$export_root/apt-manual-packages.txt" 2>/dev/null || true
+    fi
+
+    if command -v snap &> /dev/null; then
+        snap list > "$export_root/snap-list.txt" 2>/dev/null || true
+    fi
+
+    if command -v flatpak &> /dev/null; then
+        flatpak list --app --columns=application > "$export_root/flatpak-apps.txt" 2>/dev/null || true
+    fi
+
+    if command -v systemctl &> /dev/null; then
+        systemctl --user list-unit-files --state=enabled > "$export_root/systemd-user-enabled-units.txt" 2>/dev/null || true
+    fi
+
+    if command -v crontab &> /dev/null; then
+        crontab -l > "$export_root/user-crontab.txt" 2>/dev/null || true
+    fi
+
+    if command -v dconf &> /dev/null; then
+        dconf dump / > "$export_root/dconf-settings.ini" 2>/dev/null || true
+    fi
+
+    for etc_file in /etc/fstab /etc/hostname /etc/hosts /etc/default/grub /etc/apt/sources.list; do
+        if [[ -r "$etc_file" ]]; then
+            cp -a "$etc_file" "$export_root/etc/" 2>/dev/null || true
+        fi
+    done
+
+    if [[ -d /etc/apt/sources.list.d ]]; then
+        mkdir -p "$export_root/etc/apt"
+        cp -a /etc/apt/sources.list.d "$export_root/etc/apt/" 2>/dev/null || true
+    fi
+
+    return 0
+}
+# === END: Restore State Export ===
+
 # === START: Snapshot Retention ===
 prune_old_snapshots() {
     local snapshots_dir="$1"
@@ -317,6 +377,7 @@ latest_snapshot=""
 run_snapshot_name=""
 temp_snapshot_dir=""
 rsync_target=""
+restore_state_dir=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -339,6 +400,10 @@ while [[ $# -gt 0 ]]; do
             fi
             SNAPSHOT_RETENTION_COUNT="$2"
             shift 2
+            ;;
+        --no-state-export)
+            EXPORT_SYSTEM_STATE=false
+            shift
             ;;
         *)
             if [[ -z "$backup_dest" ]]; then
@@ -444,16 +509,26 @@ log_info "Dry run: $DRY_RUN"
 log_to_file "=== BACKUP SESSION STARTED ==="
 log_to_file "Backup started at: $(date '+%Y-%m-%d, %T, %A')"
 log_to_file "Backup source: $SOURCE_DIR"
-log_to_file "Backup mount point: $backup_dest"
+log_to_file "Backup destination: $backup_dest"
 log_to_file "Backup root: $backup_data_root"
 log_to_file "Snapshot root: $snapshot_root"
 log_to_file "Current snapshot: $run_snapshot_name"
 log_to_file "Dry run: $DRY_RUN"
 log_to_file "Snapshot retention count: $SNAPSHOT_RETENTION_COUNT"
+log_to_file "Machine-state export: $EXPORT_SYSTEM_STATE"
 log_to_file "Log file: $logpath"
 log_to_file "Auto-unmount: $AUTO_UNMOUNT"
 log_to_file ""
 # === END: Log File Setup ===
+
+if [[ "$EXPORT_SYSTEM_STATE" == true ]]; then
+    restore_state_dir="$log_dest/restore-state-$run_snapshot_name"
+    if export_system_state "$restore_state_dir"; then
+        log_to_file "Restore state exported to: $restore_state_dir"
+    else
+        log_to_file "WARNING: Failed to export restore state bundle"
+    fi
+fi
 
 # === START: Pre-backup Information ===
 log_info "Gathering system information..."
@@ -476,16 +551,20 @@ if command -v df &> /dev/null; then
         latest_snapshot=""
     fi
 
-    if [[ -z "$latest_snapshot" ]]; then
-        if (( dest_available_bytes < source_size_bytes )); then
-            log_error "Insufficient free space for the initial snapshot"
-            log_to_file "Required bytes for initial snapshot: $source_size_bytes"
+    if [[ "$DRY_RUN" == true ]]; then
+        log_to_file "Dry run mode: skipping strict free-space enforcement checks"
+    else
+        if [[ -z "$latest_snapshot" ]]; then
+            if (( dest_available_bytes < source_size_bytes )); then
+                log_error "Insufficient free space for the initial snapshot"
+                log_to_file "Required bytes for initial snapshot: $source_size_bytes"
+                exit 1
+            fi
+        elif (( dest_available_bytes < MIN_INCREMENTAL_FREE_BYTES )); then
+            log_error "Insufficient free space for an incremental snapshot"
+            log_to_file "Minimum incremental free-space threshold: $MIN_INCREMENTAL_FREE_BYTES"
             exit 1
         fi
-    elif (( dest_available_bytes < MIN_INCREMENTAL_FREE_BYTES )); then
-        log_error "Insufficient free space for an incremental snapshot"
-        log_to_file "Minimum incremental free-space threshold: $MIN_INCREMENTAL_FREE_BYTES"
-        exit 1
     fi
 else
     log_to_file "df command not available - skipping disk space analysis"
@@ -590,7 +669,7 @@ log_to_file "Log saved to: $logpath"
     echo "=============="
     echo "Date: $(date '+%Y-%m-%d, %T, %A')"
     echo "Source: $SOURCE_DIR"
-    echo "Mount point: $backup_dest"
+    echo "Backup destination: $backup_dest"
     echo "Backup root: $backup_data_root"
     echo "Snapshot root: $snapshot_root"
     echo "Snapshot name: $run_snapshot_name"

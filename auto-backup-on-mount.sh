@@ -20,10 +20,16 @@ fi
 for root in "${search_roots[@]}"; do
     [[ -d "$root" ]] || continue
 
-    for sentinel_path in "$root"/*/"$SENTINEL_DIR_NAME"; do
-        [[ -d "$sentinel_path" ]] || continue
+    for mount_point in "$root"/*; do
+        [[ -d "$mount_point" ]] || continue
 
-        mount_point="$(dirname "$sentinel_path")"
+        # Accept either layout:
+        # 1) mount point itself named MhasoBkp
+        # 2) mount point containing MhasoBkp subdirectory
+        if [[ "$(basename "$mount_point")" != "$SENTINEL_DIR_NAME" && ! -d "$mount_point/$SENTINEL_DIR_NAME" ]]; then
+            continue
+        fi
+
         device_path="$(findmnt -n -o SOURCE --target "$mount_point" 2>/dev/null || true)"
 
         if [[ -n "$device_path" ]]; then

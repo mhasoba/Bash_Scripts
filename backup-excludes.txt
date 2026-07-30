@@ -1,14 +1,26 @@
-/dev/*
-/proc/*
-/sys/*
-/tmp/*
-/run/*
-/mnt/*
-/media/*
-/lost+found
-.cache/google-chrome/*
-.cache/mozilla/*
-.cache/chromium/*
-julia*/*
+/dev/***
+/proc/***
+/sys/***
+/tmp/***
+/run/***
+/mnt/***
+/media/***
+/lost+found/***
+
+# Rebuildable cache paths
+.cache/***
+.thumbnails/***
+.local/share/Trash/***
+.npm/_cacache/***
+.cargo/registry/***
+.cargo/git/***
+.gradle/caches/***
+.julia/compiled/***
+.julia/logs/***
+
+# Browser profiles (user requested)
+.config/google-chrome/***
+
+# Editor and temporary files
 *.tmp
 *.swp

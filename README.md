@@ -23,8 +23,11 @@ A curated collection of useful bash scripts.
 
 ### 📱 OCR & Text Recognition
 - **`ocr-convert.sh`** - 🌟 Universal OCR tool (PDF/images → searchable PDF/text, multi-language)
-- **`ocr-pdf.sh`** - ⚠️ Legacy: Simple OCR text extraction
-- **`ocr-pdf-textlayer.sh`** - ⚠️ Legacy: Add text layer to PDFs
+
+### 🎙️ Audio Transcription
+- **`transcribe-audio.sh`** - Whisper-based transcription for audio/video files
+- **`transcribe-speakers-venv.sh`** - WhisperX wrapper that sets up a virtualenv and exports diarized transcripts
+- **`transcribe-with-speakers.sh`** - WhisperX transcription with speaker diarization support
 
 ### 💾 Backup & Synchronization
 - **`auto-backup.sh`** - Automated backup script
@@ -53,6 +56,8 @@ Most scripts require common Linux utilities. Specific requirements:
 - **Image processing**: `imagemagick`, `ghostscript`
 - **OCR scripts**: `tesseract-ocr`
 - **Video processing**: `ffmpeg`
+- **Audio transcription**: `python3`, `ffmpeg`, `openai-whisper` or `whisperx`, and `python3-venv` for the virtualenv-based wrapper
+- **Speaker diarization**: a Hugging Face access token in `HF_TOKEN`
 
 ### Installation
 1. Clone or download the scripts
@@ -224,26 +229,32 @@ Key behavior:
 - Supports `--dry-run` for safe preview runs.
 - Keeps the newest 14 completed snapshots by default and prunes older ones after a successful backup.
 - Supports `--retain-count N` to change how many completed snapshots are kept. Use `0` to disable pruning.
+- Exports a restore-state bundle (package manifests, desktop settings, and selected `/etc` files) into the log directory by default.
+- Supports `--no-state-export` when you want a data-only backup run.
 - Stores logs and summary files in the log directory you pass as the second argument.
 - Uses `backup-excludes.txt` for rsync exclusions.
 - Treats rsync exit code `24` as a warning instead of a hard failure.
 - Requires a snapshot-capable Linux filesystem on the backup disk. `ext4`, `xfs`, `btrfs`, and `zfs` are supported; `vfat`/FAT-style filesystems are not.
 - Fails fast with a clear message if the mounted backup disk cannot store symlinks/hardlinks.
+- If you want automatic launch on mount, keep the `MhasoBkp` directory on the drive. The automatic flow now writes the backup into that directory and uses it as the backup destination.
 
 Examples:
 
 ```bash
 # Preview the next backup without writing any snapshot data
-./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --dry-run
+./backup.sh /media/mhasoba/3207-D6B6/MhasoBkp /home/mhasoba/backup-logs --dry-run
 
 # Keep the newest 30 completed snapshots
-./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --retain-count 30
+./backup.sh /media/mhasoba/3207-D6B6/MhasoBkp /home/mhasoba/backup-logs --retain-count 30
 
 # Run a snapshot backup and auto-unmount on success
-./backup.sh /media/mhasoba/3207-D6B6 /home/mhasoba/backup-logs --auto-unmount
+./backup.sh /media/mhasoba/3207-D6B6/MhasoBkp /home/mhasoba/backup-logs --auto-unmount
+
+# Data-only run (skip machine-state export files)
+./backup.sh /media/mhasoba/3207-D6B6/MhasoBkp /home/mhasoba/backup-logs --no-state-export
 ```
 
-If you are using the automatic mount trigger, keep the `MhasoBkp` sentinel directory on the backup disk so `auto-backup-on-mount.sh` can detect the drive and launch `auto-backup.sh`.
+If you are using the automatic mount trigger, the backup lands in `MhasoBkp/` on the mounted drive, and `auto-backup-on-mount.sh` will launch `auto-backup.sh` when that mount is detected.
 
 ## `md2pdf.sh`
 
@@ -265,6 +276,16 @@ Examples:
 # Convert specific files
 ./md2pdf.sh README.md notes/meeting.md
 ```
+
+## Audio transcription tools
+
+The transcription scripts depend on `ffmpeg` plus either `openai-whisper` or `whisperx` depending on the script.
+
+- `transcribe-audio.sh` uses `whisper` and writes a transcript beside the input file.
+- `transcribe-speakers-venv.sh` bootstraps a virtual environment for `whisperx` and produces speaker-labeled transcript files.
+- `transcribe-with-speakers.sh` is the direct `whisperx` variant for diarized transcription.
+
+For speaker diarization, set a Hugging Face token as `HF_TOKEN`.
 
 ## `markdown-to-html.sh`
 

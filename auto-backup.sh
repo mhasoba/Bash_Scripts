@@ -7,6 +7,7 @@ DEVICE="${1:-}"
 BACKUP_SCRIPT="/home/mhasoba/Documents/Code_n_script/Bash/backup.sh"
 BACKUP_LOG_DIR="/home/mhasoba/backup-logs"
 LAUNCH_LOG="$BACKUP_LOG_DIR/auto-backup-launch.log"
+BACKUP_TARGET_DIR_NAME="MhasoBkp"
 
 if [[ -z "$DEVICE" ]]; then
     echo "Usage: $0 /dev/sdX1" >&2
@@ -37,15 +38,26 @@ resolve_mount_point() {
 
 launch_backup_prompt() {
     local mount_point="$1"
+    local backup_target=""
+
+    # If the mount point itself is named MhasoBkp, use it directly.
+    if [[ "$(basename "$mount_point")" == "$BACKUP_TARGET_DIR_NAME" ]]; then
+        backup_target="$mount_point"
+    else
+        backup_target="$mount_point/$BACKUP_TARGET_DIR_NAME"
+        mkdir -p "$backup_target"
+    fi
 
     export AUTO_BACKUP_SCRIPT="$BACKUP_SCRIPT"
     export AUTO_BACKUP_MOUNT="$mount_point"
+    export AUTO_BACKUP_TARGET="$backup_target"
     export AUTO_BACKUP_LOG_DIR="$BACKUP_LOG_DIR"
 
     if command -v gnome-terminal &> /dev/null; then
         gnome-terminal --title='Auto Backup' -- bash -lc '
             echo "=== AUTO BACKUP DETECTED ==="
             echo "External drive detected: $AUTO_BACKUP_MOUNT"
+            echo "Backup destination: $AUTO_BACKUP_TARGET"
             echo "Backup destination ready!"
             echo ""
             echo "Do you want to start the backup? (y/N)"
@@ -60,10 +72,10 @@ launch_backup_prompt() {
 
                 if [[ "$unmount_response" =~ ^[Nn]$ ]]; then
                     echo "Starting backup (without auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_MOUNT" "$AUTO_BACKUP_LOG_DIR"
+                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR"
                 else
                     echo "Starting backup (with auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_MOUNT" "$AUTO_BACKUP_LOG_DIR" --auto-unmount
+                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR" --auto-unmount
                 fi
             else
                 echo "Backup cancelled."
@@ -79,6 +91,7 @@ launch_backup_prompt() {
         x-terminal-emulator -e bash -lc '
             echo "=== AUTO BACKUP DETECTED ==="
             echo "External drive detected: $AUTO_BACKUP_MOUNT"
+            echo "Backup destination: $AUTO_BACKUP_TARGET"
             echo "Backup destination ready!"
             echo ""
             echo "Do you want to start the backup? (y/N)"
@@ -93,10 +106,10 @@ launch_backup_prompt() {
 
                 if [[ "$unmount_response" =~ ^[Nn]$ ]]; then
                     echo "Starting backup (without auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_MOUNT" "$AUTO_BACKUP_LOG_DIR"
+                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR"
                 else
                     echo "Starting backup (with auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_MOUNT" "$AUTO_BACKUP_LOG_DIR" --auto-unmount
+                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR" --auto-unmount
                 fi
             else
                 echo "Backup cancelled."
@@ -115,15 +128,20 @@ launch_backup_prompt() {
         notify-send "Backup disk detected" "Running backup in the background; see $LAUNCH_LOG for details."
     fi
 
-    "$AUTO_BACKUP_SCRIPT" "$mount_point" "$BACKUP_LOG_DIR" --auto-unmount >> "$LAUNCH_LOG" 2>&1 &
+    "$AUTO_BACKUP_SCRIPT" "$backup_target" "$BACKUP_LOG_DIR" --auto-unmount >> "$LAUNCH_LOG" 2>&1 &
 }
 
 sleep 5
 ACTUAL_MOUNT="$(resolve_mount_point "$DEVICE")"
 log_launch "Resolved device $DEVICE to mount path: ${ACTUAL_MOUNT:-<none>}"
 
-# Check for MhasoBkp (not mhasoba)
-if [[ -n "$ACTUAL_MOUNT" && -d "$ACTUAL_MOUNT/MhasoBkp" ]]; then
+# Accept either layout:
+# 1) mount point itself named MhasoBkp
+# 2) mount point containing MhasoBkp subdirectory
+if [[ -n "$ACTUAL_MOUNT" ]]; then
+    if [[ "$(basename "$ACTUAL_MOUNT")" != "$BACKUP_TARGET_DIR_NAME" ]]; then
+        mkdir -p "$ACTUAL_MOUNT/$BACKUP_TARGET_DIR_NAME"
+    fi
     if command -v notify-send &> /dev/null; then
         notify-send "Backup disk detected" "Open the Auto Backup terminal window to confirm the backup."
     fi
