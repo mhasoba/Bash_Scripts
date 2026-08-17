@@ -96,29 +96,49 @@ safely_unmount() {
     sync
     sleep 2
     
-    # Try to unmount
-    if umount "$mount_point" 2>/dev/null; then
-        log_info "Successfully unmounted $mount_point"
-        log_to_file "Drive unmounted successfully"
-        
-        # Optional: Show notification
-        if command -v notify-send &> /dev/null; then
-            notify-send "Backup Complete" "Drive unmounted safely. You can now remove the device."
+    # Try to unmount, retrying and nudging file managers that may be
+    # holding the mount point open (e.g. Nautilus browsing the folder)
+    local attempt
+    for attempt in 1 2 3; do
+        if umount "$mount_point" 2>/dev/null; then
+            log_info "Successfully unmounted $mount_point"
+            log_to_file "Drive unmounted successfully"
+
+            if command -v notify-send &> /dev/null; then
+                notify-send "Backup Complete" "Drive unmounted safely. You can now remove the device."
+            fi
+
+            return 0
         fi
-        
-        return 0
-    else
-        log_error "Failed to unmount $mount_point - device may be busy"
-        log_to_file "WARNING: Failed to unmount drive - please unmount manually"
-        
-        # Show what processes might be using the mount point
-        if command -v lsof &> /dev/null; then
-            log_info "Processes using the mount point:"
-            lsof +D "$mount_point" 2>/dev/null | head -10 || true
+
+        if [[ $attempt -lt 3 ]] && command -v fuser &> /dev/null; then
+            # Ask file-manager style processes (nautilus/nemo/dolphin/thunar/pcmanfm)
+            # holding the mount point to release it; they just re-open a new
+            # window on next launch, so this is safe and non-destructive.
+            local holder_pids
+            holder_pids=$(fuser -m "$mount_point" 2>/dev/null || true)
+            for pid in $holder_pids; do
+                local pcomm
+                pcomm=$(ps -o comm= -p "$pid" 2>/dev/null || echo "")
+                if [[ "$pcomm" =~ ^(nautilus|nemo|dolphin|thunar|pcmanfm|caja)$ ]]; then
+                    log_info "Closing $pcomm (PID $pid) which is holding $mount_point open"
+                    kill "$pid" 2>/dev/null || true
+                fi
+            done
+            sleep 1
         fi
-        
-        return 1
+    done
+
+    log_error "Failed to unmount $mount_point - device may be busy"
+    log_to_file "WARNING: Failed to unmount drive - please unmount manually"
+
+    # Show what processes might be using the mount point
+    if command -v lsof &> /dev/null; then
+        log_info "Processes using the mount point:"
+        lsof +D "$mount_point" 2>/dev/null | head -10 || true
     fi
+
+    return 1
 }
 # === END: Unmount Function ===
 
