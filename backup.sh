@@ -624,15 +624,21 @@ summary_file="$log_dest/Backup_Summary_$(date '+%Y%m%d_%H%M%S').txt"
 final_snapshot_dir="$snapshot_root/$run_snapshot_name"
 final_exit_code=$rsync_exit_code
 
+unreadable_files="$(grep -oP '^\S+ \S+ \[\d+\] rsync: \[sender\] read errors mapping "\K[^"]+' "$logpath" 2>/dev/null | sort -u || true)"
+unreadable_count=0
+[[ -n "$unreadable_files" ]] && unreadable_count=$(printf '%s\n' "$unreadable_files" | wc -l)
+
 if [[ $rsync_exit_code -eq 0 ]]; then
     log_info "Backup completed successfully!"
     log_to_file "Status: SUCCESS"
     echo "✓ Backup completed successfully!" > "$summary_file"
     backup_success=true
-elif [[ $rsync_exit_code -eq 24 ]]; then
-    log_info "Backup completed with warnings (some files vanished during transfer)"
-    log_to_file "Status: SUCCESS WITH WARNINGS (rsync exit code 24)"
-    echo "⚠ Backup completed with warnings (rsync exit code 24)" > "$summary_file"
+elif [[ $rsync_exit_code -eq 23 || $rsync_exit_code -eq 24 ]]; then
+    # 23/24 mean some files were skipped (unreadable or vanished); the rest of the
+    # tree is still consistent, so the snapshot is kept rather than discarded.
+    log_info "Backup completed with warnings (rsync exit code: $rsync_exit_code)"
+    log_to_file "Status: SUCCESS WITH WARNINGS (rsync exit code $rsync_exit_code)"
+    echo "⚠ Backup completed with warnings (rsync exit code $rsync_exit_code)" > "$summary_file"
     backup_success=true
     final_exit_code=0
 else
@@ -640,6 +646,19 @@ else
     log_to_file "Status: COMPLETED WITH ERRORS (exit code: $rsync_exit_code)"
     echo "⚠ Backup completed with errors (exit code: $rsync_exit_code)" > "$summary_file"
     backup_success=false
+fi
+
+if (( unreadable_count > 0 )); then
+    log_error "$unreadable_count source file(s) could not be read - possible disk damage"
+    log_to_file ""
+    log_to_file "=== UNREADABLE SOURCE FILES ($unreadable_count) ==="
+    log_to_file "$unreadable_files"
+    log_to_file "These files are NOT in the backup. Check source disk health."
+
+    if command -v notify-send &> /dev/null; then
+        notify-send -u critical "Backup warning" \
+            "$unreadable_count source file(s) unreadable. Check source disk health."
+    fi
 fi
 
 if [[ "$DRY_RUN" == false && "$backup_success" == true ]]; then
@@ -675,6 +694,7 @@ log_to_file "Log saved to: $logpath"
     echo "Snapshot name: $run_snapshot_name"
     echo "Dry run: $DRY_RUN"
     echo "Snapshot retention count: $SNAPSHOT_RETENTION_COUNT"
+    echo "Unreadable source files: $unreadable_count"
     echo "Duration: $duration_text"
     echo "Log file: $logpath"
     echo ""
