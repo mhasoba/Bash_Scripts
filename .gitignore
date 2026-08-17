@@ -121,3 +121,6 @@ node_modules/
 # Example: Ignore output files from specific scripts
 # output/
 # results/
+
+# OCR script output
+ocr_output/
