@@ -24,3 +24,6 @@
 # Editor and temporary files
 *.tmp
 *.swp
+
+# Unreadable: source SSD bad sectors, confirmed 2026-08-17
+Documents/Music/Johnny Cash/The Legend Vol. 1_ Win, Place and Show_ The Hits/
