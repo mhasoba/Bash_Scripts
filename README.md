@@ -2,6 +2,21 @@
 
 A curated collection of useful bash scripts.
 
+## Table of Contents
+
+- [Script Overview](#-script-overview)
+- [Getting Started](#-getting-started)
+- [Detailed Guides](#detailed-guides)
+	- [markdown-to-pdf.sh](#markdown-to-pdfsh)
+	- [Auto-backup on mount via systemd user units](#auto-backup-on-mount-via-systemd-user-units)
+	- [backup.sh](#backupsh)
+	- [md2pdf.sh](#md2pdfsh)
+	- [Audio transcription tools](#audio-transcription-tools)
+	- [markdown-to-html.sh](#markdown-to-htmlsh)
+- [Documentation](#-documentation)
+- [Configuration](#-configuration)
+- [License](#-license)
+
 ## 📁 Script Overview
 
 ### 📄 Document Processing
@@ -116,7 +131,9 @@ sudo chmod +x /path/to/this/directory/*.sh
 ./pdf-to-text.sh --layout raw --output-dir ./text_files/ *.pdf
 ```
 
-## `markdown-to-pdf.sh`
+## Detailed Guides
+
+### markdown-to-pdf.sh
 
 Convert Markdown files to PDF. The script prefers `pandoc` (direct MD→PDF) and falls back to `markdown` + `wkhtmltopdf`.
 
@@ -156,33 +173,7 @@ Notes and tips:
 - When running from other directories prefer the command name (no `./`), e.g. `find . -type f -name '*.md' -exec markdown-to-pdf {} +` so the tool is resolved via your `PATH`.
 ```
 
-## 📚 Documentation
-
-- **`BASH_CHEATSHEET.md`** - Bash command reference and cheat sheet
-
-## 🔧 Configuration
-
-### Environment Setup
-Add useful aliases to your `~/.bashrc`:
-```bash
-# Add script directory to PATH
-export PATH="$PATH:/path/to/this/directory"
-
-# Useful aliases
-alias latex-compile='compile-latex.sh'
-alias pdf-shrink='shrink-pdf.sh'
-alias latex-diff='git-latex-diff.sh'
-```
-
-## 📄 License
-
-These scripts are provided as-is for educational and practical use.
-
----
-
-*💡 **Tip**: Check the individual script files for specific usage instructions and options.*
-
-## Auto-backup on mount via systemd user units
+### Auto-backup on mount via systemd user units
 
 This repository includes a ready-to-enable systemd user `.path` + `.service` pair in `systemd-user/`.
 The path unit watches for a mounted directory containing `MhasoBkp`, then `auto-backup-on-mount.sh` resolves the backing device and launches `auto-backup.sh` in `gnome-terminal`.
@@ -210,7 +201,7 @@ Notes:
 - The helper script may also be run manually after `chmod +x auto-backup-on-mount.sh`.
 - The service inherits GUI session variables from the user systemd manager, so re-run `systemctl --user import-environment ...` after login if `gnome-terminal` does not appear.
 
-## `backup.sh`
+### backup.sh
 
 The backup script now writes versioned snapshots under a host-specific directory on the mounted backup disk:
 
@@ -256,7 +247,7 @@ Examples:
 
 If you are using the automatic mount trigger, the backup lands in `MhasoBkp/` on the mounted drive, and `auto-backup-on-mount.sh` will launch `auto-backup.sh` when that mount is detected.
 
-## `md2pdf.sh`
+### md2pdf.sh
 
 A small wrapper that converts multiple Markdown files to PDF using `markdown-to-pdf.sh`.
 
@@ -277,7 +268,7 @@ Examples:
 ./md2pdf.sh README.md notes/meeting.md
 ```
 
-## Audio transcription tools
+### Audio transcription tools
 
 The transcription scripts depend on `ffmpeg` plus either `openai-whisper` or `whisperx` depending on the script.
 
@@ -287,7 +278,7 @@ The transcription scripts depend on `ffmpeg` plus either `openai-whisper` or `wh
 
 For speaker diarization, set a Hugging Face token as `HF_TOKEN`.
 
-## `markdown-to-html.sh`
+### markdown-to-html.sh
 
 Convert Markdown to HTML. Prefers `pandoc` and falls back to the classic `markdown` utility.
 
@@ -302,3 +293,29 @@ cat README.md | markdown-to-html -
 # Convert many files
 find . -type f -name '*.md' -exec markdown-to-html {} +
 ```
+
+## 📚 Documentation
+
+- **`BASH_CHEATSHEET.md`** - Bash command reference and cheat sheet
+
+## 🔧 Configuration
+
+### Environment Setup
+Add useful aliases to your `~/.bashrc`:
+```bash
+# Add script directory to PATH
+export PATH="$PATH:/path/to/this/directory"
+
+# Useful aliases
+alias latex-compile='compile-latex.sh'
+alias pdf-shrink='shrink-pdf.sh'
+alias latex-diff='git-latex-diff.sh'
+```
+
+## 📄 License
+
+These scripts are provided as-is for educational and practical use.
+
+---
+
+*💡 **Tip**: Check the individual script files for specific usage instructions and options.*
