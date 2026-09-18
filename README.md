@@ -7,6 +7,8 @@ A curated collection of useful bash scripts.
 - [Script Overview](#-script-overview)
 - [Getting Started](#-getting-started)
 - [Detailed Guides](#detailed-guides)
+	- [docx-to-pdf.sh](#docx-to-pdfsh)
+	- [docx-to-md.sh](#docx-to-mdsh)
 	- [markdown-to-pdf.sh](#markdown-to-pdfsh)
 	- [Auto-backup on mount via systemd user units](#auto-backup-on-mount-via-systemd-user-units)
 	- [backup.sh](#backupsh)
@@ -21,6 +23,7 @@ A curated collection of useful bash scripts.
 
 ### 📄 Document Processing
 - **`compile-latex.sh`** - Enhanced LaTeX compilation script with bibliography support
+- **`docx-to-md.sh`** - Convert DOCX files to Markdown
 - **`docx-to-pdf.sh`** - Convert DOCX files to PDF format
 - **`markdown-to-pdf.sh`** - Convert Markdown files to PDF
 - **`markdown-to-html.sh`** - Convert Markdown files to HTML
@@ -68,6 +71,8 @@ A curated collection of useful bash scripts.
 ### Prerequisites
 Most scripts require common Linux utilities. Specific requirements:
 - **LaTeX scripts**: `pdflatex`, `bibtex`/`biber`
+- **DOCX to PDF**: `pandoc`, `texlive-xetex` (default PDF engine)
+- **DOCX to Markdown**: `pandoc`
 - **Image processing**: `imagemagick`, `ghostscript`
 - **OCR scripts**: `tesseract-ocr`
 - **Video processing**: `ffmpeg`
@@ -129,9 +134,75 @@ sudo chmod +x /path/to/this/directory/*.sh
 
 # Batch convert PDFs to text (raw mode, no layout)
 ./pdf-to-text.sh --layout raw --output-dir ./text_files/ *.pdf
+
+# Convert one or more DOCX files to Markdown
+./docx-to-md.sh report.docx notes.docx
+
+# Write Markdown files to a separate directory
+./docx-to-md.sh --output-dir markdown *.docx
+
+# Convert DOCX files to A4 PDFs in a separate directory
+./docx-to-pdf.sh --output-dir pdfs *.docx
+
+# Adjust document layout while converting
+./docx-to-pdf.sh --margin 20mm --font-size 12pt --line-spacing 1.5 report.docx
 ```
 
 ## Detailed Guides
+
+### docx-to-pdf.sh
+
+Convert one or more DOCX files to PDF using `pandoc` and XeLaTeX.
+
+Prerequisite:
+```bash
+sudo apt install pandoc texlive-xetex
+```
+
+By default, PDFs use A4 paper with 1-inch margins, 11pt text, and 1.15 line spacing. Embedded DOCX images are preserved through Pandoc's normal conversion path.
+
+Examples:
+```bash
+# Write report.pdf beside report.docx
+./docx-to-pdf.sh report.docx
+
+# Convert several documents into a dedicated directory
+./docx-to-pdf.sh --output-dir pdfs meeting.docx notes.docx
+
+# Use a font and US Letter paper
+./docx-to-pdf.sh --font "Noto Serif" --paper-size letter report.docx
+
+# Customize the document layout and replace an existing PDF
+./docx-to-pdf.sh --margin 20mm --font-size 12pt --line-spacing 1.5 --overwrite report.docx
+
+# Use another installed LaTeX engine
+./docx-to-pdf.sh --pdf-engine lualatex report.docx
+```
+
+Use `--suffix` to select a different output suffix. Existing PDFs are skipped unless `--overwrite` is supplied. `--font` requires either `xelatex` or `lualatex`; use `--pdf-engine` to choose another installed LaTeX engine.
+
+### docx-to-md.sh
+
+Convert one or more DOCX files to Markdown using `pandoc`.
+
+Prerequisite:
+```bash
+sudo apt install pandoc
+```
+
+Examples:
+```bash
+# The output defaults to report.md beside report.docx
+./docx-to-md.sh report.docx
+
+# Convert several documents at once
+./docx-to-md.sh meeting.docx notes.docx
+
+# Use a separate output directory and replace existing Markdown files
+./docx-to-md.sh --output-dir markdown --overwrite *.docx
+```
+
+Use `--suffix .markdown` to select a different output suffix. Existing output files are skipped unless `--overwrite` is supplied. The utility preserves text structure that Pandoc supports, such as headings, lists, and tables; embedded images are omitted, hard line breaks are normalized, and escaped apostrophes are cleaned.
 
 ### markdown-to-pdf.sh
 
