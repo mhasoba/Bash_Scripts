@@ -4,20 +4,34 @@ A curated collection of useful bash scripts.
 
 ## Table of Contents
 
-- [Script Overview](#-script-overview)
-- [Getting Started](#-getting-started)
-- [Detailed Guides](#detailed-guides)
-	- [docx-to-pdf.sh](#docx-to-pdfsh)
-	- [docx-to-md.sh](#docx-to-mdsh)
-	- [markdown-to-pdf.sh](#markdown-to-pdfsh)
-	- [Auto-backup on mount via systemd user units](#auto-backup-on-mount-via-systemd-user-units)
-	- [backup.sh](#backupsh)
-	- [md2pdf.sh](#md2pdfsh)
-	- [Audio transcription tools](#audio-transcription-tools)
-	- [markdown-to-html.sh](#markdown-to-htmlsh)
-- [Documentation](#-documentation)
-- [Configuration](#-configuration)
-- [License](#-license)
+- [Samraat's Collection o' Bash Scripts](#samraats-collection-o-bash-scripts)
+	- [Table of Contents](#table-of-contents)
+	- [📁 Script Overview](#-script-overview)
+		- [📄 Document Processing](#-document-processing)
+		- [🖼️ Image Processing](#️-image-processing)
+		- [📱 OCR \& Text Recognition](#-ocr--text-recognition)
+		- [🎙️ Audio Transcription](#️-audio-transcription)
+		- [💾 Backup \& Synchronization](#-backup--synchronization)
+		- [🎥 Media Processing](#-media-processing)
+		- [🔧 File Management](#-file-management)
+		- [🔀 Version Control](#-version-control)
+		- [Supporting Files](#supporting-files)
+	- [🚀 Getting Started](#-getting-started)
+		- [Prerequisites](#prerequisites)
+		- [Installation](#installation)
+		- [Usage Examples](#usage-examples)
+	- [Detailed Guides](#detailed-guides)
+		- [docx-to-pdf.sh](#docx-to-pdfsh)
+		- [docx-to-md.sh](#docx-to-mdsh)
+		- [markdown-to-pdf.sh](#markdown-to-pdfsh)
+		- [backup.sh](#backupsh)
+		- [md2pdf.sh](#md2pdfsh)
+		- [Audio transcription tools](#audio-transcription-tools)
+		- [markdown-to-html.sh](#markdown-to-htmlsh)
+	- [📚 Documentation](#-documentation)
+	- [🔧 Configuration](#-configuration)
+		- [Environment Setup](#environment-setup)
+	- [📄 License](#-license)
 
 ## 📁 Script Overview
 
@@ -26,6 +40,7 @@ A curated collection of useful bash scripts.
 - **`docx-to-md.sh`** - Convert DOCX files to Markdown
 - **`docx-to-pdf.sh`** - Convert DOCX files to PDF format
 - **`markdown-to-pdf.sh`** - Convert Markdown files to PDF
+- **`md2pdf.sh`** - Batch-convert Markdown files to PDF, with parallel jobs and output-directory support
 - **`markdown-to-html.sh`** - Convert Markdown files to HTML
 - **`merge-pdfs.sh`** - Merge multiple PDF files into one
 - **`pdf-to-text.sh`** - Convert PDF files to plain text with layout options
@@ -43,9 +58,8 @@ A curated collection of useful bash scripts.
 - **`ocr-convert.sh`** - 🌟 Universal OCR tool (PDF/images → searchable PDF/text, multi-language)
 
 ### 🎙️ Audio Transcription
-- **`transcribe-audio.sh`** - Whisper-based transcription for audio/video files
-- **`transcribe-speakers-venv.sh`** - WhisperX wrapper that sets up a virtualenv and exports diarized transcripts
-- **`transcribe-with-speakers.sh`** - WhisperX transcription with speaker diarization support
+- **[`transcription/transcribe-audio.sh`](transcription/transcribe-audio.sh)** - OpenAI Whisper CLI alternative for plain transcription
+- **[`transcription/`](transcription/README.md)** - WhisperX pipeline for speaker-labeled transcription, including batch processing
 
 ### 💾 Backup & Synchronization
 - **`auto-backup.sh`** - Automated backup script
@@ -65,6 +79,9 @@ A curated collection of useful bash scripts.
 
 ### 🔀 Version Control
 - **`git-latex-diff.sh`** - Git integration for LaTeX diff operations
+
+### Supporting Files
+- **`docx-to-md-strip-images.lua`** - Pandoc filter used by the DOCX-to-Markdown conversion
 
 ## 🚀 Getting Started
 
@@ -236,7 +253,7 @@ Recursive find:
 find . -type f -name '*.md' -exec ./markdown-to-pdf.sh {} \;
 ```
 
-If you'd like a built-in `--parallel` or output-dir option added to the script, open an issue or request to implement it.
+For parallel conversions or an output directory, use [`md2pdf.sh`](#md2pdfsh), which wraps this converter and provides both options.
 
 Notes and tips:
 - The script now prefers `pandoc` with `xelatex` and will attempt to select a Unicode-capable `mainfont` and an emoji/symbol font when available. If you still see "Missing character" warnings for symbols like ✅ or ≥, install a broad Unicode font such as `fonts-noto-serif` and an emoji font like `fonts-noto-color-emoji`.
@@ -341,13 +358,9 @@ Examples:
 
 ### Audio transcription tools
 
-The transcription scripts depend on `ffmpeg` plus either `openai-whisper` or `whisperx` depending on the script.
+The OpenAI Whisper CLI and WhisperX speaker-diarization tools are grouped under [`transcription/`](transcription/README.md). Use the OpenAI Whisper script for a simple transcript in TXT, SRT, VTT, JSON, or TSV; use WhisperX for aligned word timestamps and speaker labels.
 
-- `transcribe-audio.sh` uses `whisper` and writes a transcript beside the input file.
-- `transcribe-speakers-venv.sh` bootstraps a virtual environment for `whisperx` and produces speaker-labeled transcript files.
-- `transcribe-with-speakers.sh` is the direct `whisperx` variant for diarized transcription.
-
-For speaker diarization, set a Hugging Face token as `HF_TOKEN`.
+The WhisperX scripts read `HF_TOKEN` from the repository-root `.env` when it is not already exported. The file is ignored by Git; restrict local access with `chmod 600 .env`.
 
 ### markdown-to-html.sh
 

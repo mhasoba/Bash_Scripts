@@ -85,7 +85,6 @@ if command -v pandoc >/dev/null 2>&1; then
                -e 's/^[[:space:]]*\.\.\.[[:space:]]*$/<hr \/>/' \
                -e 's/^[[:space:]]*\+\+\+[[:space:]]*$/<hr \/>/' "$tmpmd"
     fi
-    fi
 
     # If the original file did not include an explicit title in its front-matter,
     # provide a sensible default title (filename) to avoid pandoc's "nonempty <title>"

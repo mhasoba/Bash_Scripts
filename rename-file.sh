@@ -29,9 +29,10 @@ rename -v 's/\d{1}(\d{3}).jpg$/$1\.jpg/' *.jpg
 find -name "* - *" -type f | rename 's/ - /_/g'
 
 
-ls | while read -r FILE
-do
-  # mv -v "$FILE" `echo $FILE | tr ' - ' '_' `
-done
+
+
+
+
+
 
 

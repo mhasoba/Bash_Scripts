@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # Script to transcribe audio/video recordings using OpenAI Whisper
-# Usage: ./transcribe-audio.sh input_file [output_format] [model_size]
+# Usage: ./transcription/transcribe-audio.sh input_file [output_format] [model_size]
 
 # Check if input file is provided
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <input_file> [output_format] [model_size]"
     echo ""
     echo "Arguments:"
-    echo "  input_file     - Audio or videoIf disk space is a concern, you can use the "tiny" model (~75 MB) which is quite good for basic transcription. The script defaults to "base" which is a good compromise between size and accuracy.
-
- file to transcribe"
+    echo "  input_file     - Audio or video file to transcribe"
     echo "  output_format  - Output format: txt, srt, vtt, json, tsv (default: txt)"
     echo "  model_size     - Whisper model: tiny, base, small, medium, large (default: base)"
     echo ""
@@ -51,6 +49,10 @@ fi
 
 # Output format (default: txt)
 OUTPUT_FORMAT="${2:-txt}"
+case "$OUTPUT_FORMAT" in
+    txt|srt|vtt|json|tsv) ;;
+    *) echo "Error: Unsupported output format '$OUTPUT_FORMAT'." >&2; exit 1 ;;
+esac
 
 # Model size (default: base)
 MODEL_SIZE="${3:-base}"
@@ -62,6 +64,10 @@ FILENAME_NO_EXT="${FILENAME%.*}"
 
 # Output directory
 OUTPUT_DIR="$INPUT_DIR"
+if [ -e "$OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT" ] || [ -L "$OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT" ]; then
+    echo "Error: Output already exists: $OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT" >&2
+    exit 1
+fi
 
 echo "Transcribing: $INPUT_FILE"
 echo "Model: $MODEL_SIZE"
@@ -69,13 +75,11 @@ echo "Output format: $OUTPUT_FORMAT"
 echo ""
 
 # Run whisper transcription
-whisper "$INPUT_FILE" \
+if whisper "$INPUT_FILE" \
     --model "$MODEL_SIZE" \
     --output_format "$OUTPUT_FORMAT" \
-    --output_dir "$OUTPUT_DIR"
+    --output_dir "$OUTPUT_DIR" && [ -f "$OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT" ]; then
 
-# Check if transcription was successful
-if [ $? -eq 0 ]; then
     echo ""
     echo "Transcription complete!"
     echo "Output saved to: $OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT"

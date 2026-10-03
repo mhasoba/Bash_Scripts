@@ -48,6 +48,18 @@ test/
 tests/
 tmp/
 temp/
+/sandbox/
+
+# Generated WhisperX transcripts and runtime artifacts
+*_speakers.txt
+*_speakers.srt
+*_speakers.json
+*_transcript.txt
+*_transcript.srt
+*_transcript.json
+.*_speakers.lock
+.*_transcript.lock
+.transcription-*/
 
 # OS generated files
 .DS_Store
@@ -78,6 +90,10 @@ desktop.ini
 *.tar.gz
 *.tgz
 *.zip
+
+# Python cache files
+__pycache__/
+*.py[cod]
 *.rar
 *.7z
 
