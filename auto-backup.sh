@@ -4,8 +4,9 @@
 set -euo pipefail
 
 DEVICE="${1:-}"
-BACKUP_SCRIPT="/home/mhasoba/Documents/Code_n_script/Bash/backup.sh"
-BACKUP_LOG_DIR="/home/mhasoba/backup-logs"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_SCRIPT="$SCRIPT_DIR/backup.sh"
+BACKUP_LOG_DIR="${BACKUP_LOG_DIR:-$HOME/backup-logs}"
 LAUNCH_LOG="$BACKUP_LOG_DIR/auto-backup-launch.log"
 BACKUP_TARGET_DIR_NAME="MhasoBkp"
 
@@ -39,6 +40,18 @@ resolve_mount_point() {
 launch_backup_prompt() {
     local mount_point="$1"
     local backup_target=""
+    local terminal_command=()
+    local prompt_command=""
+
+    if command -v gnome-terminal >/dev/null 2>&1; then
+        terminal_command=(gnome-terminal --title='Auto Backup' --)
+    elif command -v x-terminal-emulator >/dev/null 2>&1; then
+        terminal_command=(x-terminal-emulator -e)
+    else
+        echo "No supported terminal emulator found; backup not started." >&2
+        log_launch "No terminal emulator found; confirmation required for $mount_point"
+        return 1
+    fi
 
     # If the mount point itself is named MhasoBkp, use it directly.
     if [[ "$(basename "$mount_point")" == "$BACKUP_TARGET_DIR_NAME" ]]; then
@@ -53,8 +66,7 @@ launch_backup_prompt() {
     export AUTO_BACKUP_TARGET="$backup_target"
     export AUTO_BACKUP_LOG_DIR="$BACKUP_LOG_DIR"
 
-    if command -v gnome-terminal &> /dev/null; then
-        gnome-terminal --title='Auto Backup' -- bash -lc '
+    prompt_command='
             echo "=== AUTO BACKUP DETECTED ==="
             echo "External drive detected: $AUTO_BACKUP_MOUNT"
             echo "Backup destination: $AUTO_BACKUP_TARGET"
@@ -84,51 +96,7 @@ launch_backup_prompt() {
             echo "Press any key to close this window..."
             read -r -n1
         '
-        return $?
-    fi
-
-    if command -v x-terminal-emulator &> /dev/null; then
-        x-terminal-emulator -e bash -lc '
-            echo "=== AUTO BACKUP DETECTED ==="
-            echo "External drive detected: $AUTO_BACKUP_MOUNT"
-            echo "Backup destination: $AUTO_BACKUP_TARGET"
-            echo "Backup destination ready!"
-            echo ""
-            echo "Do you want to start the backup? (y/N)"
-            read -r -n1 response
-            echo ""
-
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                echo ""
-                echo "Auto-unmount drive after backup? (Y/n)"
-                read -r -n1 unmount_response
-                echo ""
-
-                if [[ "$unmount_response" =~ ^[Nn]$ ]]; then
-                    echo "Starting backup (without auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR"
-                else
-                    echo "Starting backup (with auto-unmount)..."
-                    "$AUTO_BACKUP_SCRIPT" "$AUTO_BACKUP_TARGET" "$AUTO_BACKUP_LOG_DIR" --auto-unmount
-                fi
-            else
-                echo "Backup cancelled."
-            fi
-            echo ""
-            echo "Press any key to close this window..."
-            read -r -n1
-        '
-        return $?
-    fi
-
-    echo "No supported terminal emulator found. Running backup in the background." >&2
-    log_launch "No terminal emulator found; running backup headlessly for $mount_point"
-
-    if command -v notify-send &> /dev/null; then
-        notify-send "Backup disk detected" "Running backup in the background; see $LAUNCH_LOG for details."
-    fi
-
-    "$AUTO_BACKUP_SCRIPT" "$backup_target" "$BACKUP_LOG_DIR" --auto-unmount >> "$LAUNCH_LOG" 2>&1 &
+    "${terminal_command[@]}" bash -lc "$prompt_command"
 }
 
 sleep 5
@@ -139,9 +107,6 @@ log_launch "Resolved device $DEVICE to mount path: ${ACTUAL_MOUNT:-<none>}"
 # 1) mount point itself named MhasoBkp
 # 2) mount point containing MhasoBkp subdirectory
 if [[ -n "$ACTUAL_MOUNT" ]]; then
-    if [[ "$(basename "$ACTUAL_MOUNT")" != "$BACKUP_TARGET_DIR_NAME" ]]; then
-        mkdir -p "$ACTUAL_MOUNT/$BACKUP_TARGET_DIR_NAME"
-    fi
     if command -v notify-send &> /dev/null; then
         notify-send "Backup disk detected" "Open the Auto Backup terminal window to confirm the backup."
     fi
@@ -151,6 +116,7 @@ if [[ -n "$ACTUAL_MOUNT" ]]; then
         log_launch "Backup launcher completed successfully for $ACTUAL_MOUNT"
     else
         log_launch "Backup launcher exited with status $?"
+        exit 1
     fi
 else
     log_launch "Backup sentinel missing for mount path: ${ACTUAL_MOUNT:-<none>}"

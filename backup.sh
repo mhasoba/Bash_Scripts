@@ -212,14 +212,23 @@ validate_destination() {
 
 validate_mounted_destination() {
     local dest="$1"
+    local mount_point=""
+    local device_path=""
+    local root_device=""
 
-    if ! command -v findmnt &> /dev/null; then
-        log_error "findmnt is not installed. Please install util-linux first."
-        return 1
-    fi
+    mount_point="$(findmnt -rn -o TARGET --target "$dest" 2>/dev/null)" || return 1
+    case "$mount_point" in
+        /mnt|/mnt/*|/media|/media/*|/run/media|/run/media/*) ;;
+        *)
+            log_error "Destination '$dest' is not on an approved backup mount"
+            return 1
+            ;;
+    esac
 
-    if ! findmnt -rn --target "$dest" >/dev/null 2>&1; then
-        log_error "Destination '$dest' is not an active mount point"
+    device_path="$(findmnt -rn -o SOURCE --target "$dest" 2>/dev/null)" || return 1
+    root_device="$(findmnt -rn -o SOURCE --target / 2>/dev/null)" || return 1
+    if [[ "$device_path" != /dev/* || "${device_path%%\[*}" == "${root_device%%\[*}" ]]; then
+        log_error "Destination '$dest' must be on a separate mounted backup device"
         return 1
     fi
 
@@ -229,11 +238,6 @@ validate_mounted_destination() {
 validate_snapshot_capable_filesystem() {
     local dest="$1"
     local fs_type=""
-
-    if ! command -v findmnt &> /dev/null; then
-        log_error "findmnt is not installed. Please install util-linux first."
-        return 1
-    fi
 
     fs_type="$(findmnt -n -o FSTYPE --target "$dest" 2>/dev/null || true)"
 
@@ -267,59 +271,150 @@ validate_non_negative_integer() {
 # === END: Validation Functions ===
 
 # === START: Restore State Export ===
-export_system_state() {
-    local export_root="$1"
+running_ai_apps() {
+    ps -u "$(id -u)" -o comm= |
+        awk '$1 ~ /^(code|code-insiders|codex|codex-cli)$/ { print $1 }' |
+        sort -u
+}
 
+export_state_command() {
+    local export_root="$1"
+    local output_name="$2"
+    shift 2
+
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf 'UNAVAILABLE: %s\n' "$1" >> "$export_root/export-status.txt"
+    elif "$@" > "$export_root/$output_name" 2>> "$export_root/export-errors.log"; then
+        printf 'OK: %s\n' "$output_name" >> "$export_root/export-status.txt"
+    else
+        printf 'WARNING: %s failed; output may be incomplete\n' "$output_name" >> "$export_root/export-status.txt"
+    fi
+}
+
+export_system_state() (
+    local export_root="$1"
+    local config_path=""
+
+    umask 077
     mkdir -p "$export_root" || return 1
+    chmod 700 "$export_root" || return 1
     mkdir -p "$export_root/etc" || return 1
+    : > "$export_root/export-status.txt" || return 1
+    : > "$export_root/export-errors.log" || return 1
 
     {
         echo "generated_at=$(date '+%Y-%m-%dT%H:%M:%S%z')"
         echo "host=$HOST_NAME"
         echo "user=${USER:-unknown}"
+        echo "uid=$(id -u)"
+        echo "gid=$(id -g)"
         echo "source_dir=$SOURCE_DIR"
-    } > "$export_root/metadata.txt"
+    } > "$export_root/metadata.txt" || return 1
 
-    if command -v dpkg-query &> /dev/null; then
-        dpkg-query -W -f='${binary:Package}\t${Version}\n' > "$export_root/dpkg-package-versions.tsv" 2>/dev/null || true
+    export_state_command "$export_root" dpkg-package-versions.tsv dpkg-query -W -f='${binary:Package}\t${Version}\n' || return 1
+    export_state_command "$export_root" apt-manual-packages.txt apt-mark showmanual || return 1
+    export_state_command "$export_root" snap-list.txt snap list || return 1
+    export_state_command "$export_root" flatpak-apps.txt flatpak list --app --columns=application || return 1
+    export_state_command "$export_root" flatpak-remotes.txt flatpak remotes --show-details || return 1
+    export_state_command "$export_root" systemd-user-enabled-units.txt systemctl --user list-unit-files --state=enabled || return 1
+    export_state_command "$export_root" user-crontab.txt crontab -l || return 1
+    export_state_command "$export_root" dconf-settings.ini dconf dump / || return 1
+    export_state_command "$export_root" vscode-extensions.txt code --list-extensions --show-versions || return 1
+    export_state_command "$export_root" running-ai-apps.txt running_ai_apps || return 1
+    if [[ -s "$export_root/running-ai-apps.txt" ]]; then
+        printf 'WARNING: VS Code/Codex processes detected; live databases may be inconsistent\n' >> "$export_root/export-status.txt" || return 1
     fi
 
-    if command -v apt-mark &> /dev/null; then
-        apt-mark showmanual > "$export_root/apt-manual-packages.txt" 2>/dev/null || true
-    fi
-
-    if command -v snap &> /dev/null; then
-        snap list > "$export_root/snap-list.txt" 2>/dev/null || true
-    fi
-
-    if command -v flatpak &> /dev/null; then
-        flatpak list --app --columns=application > "$export_root/flatpak-apps.txt" 2>/dev/null || true
-    fi
-
-    if command -v systemctl &> /dev/null; then
-        systemctl --user list-unit-files --state=enabled > "$export_root/systemd-user-enabled-units.txt" 2>/dev/null || true
-    fi
-
-    if command -v crontab &> /dev/null; then
-        crontab -l > "$export_root/user-crontab.txt" 2>/dev/null || true
-    fi
-
-    if command -v dconf &> /dev/null; then
-        dconf dump / > "$export_root/dconf-settings.ini" 2>/dev/null || true
-    fi
+    cp "$EXCLUDE_FILE" "$export_root/backup-excludes.txt" || return 1
+    cp /etc/os-release "$export_root/os-release" || return 1
+    for config_path in .inputrc .bashrc .bash_profile .profile .bash_aliases .bash_history .zshrc .zsh_history .tmux.conf .config .local/share .local/bin bin .gitconfig .ssh .gnupg .codex; do
+        if [[ -e "$SOURCE_DIR/$config_path" || -L "$SOURCE_DIR/$config_path" ]]; then
+            printf 'PRESENT: %s\n' "$config_path"
+        else
+            printf 'ABSENT: %s\n' "$config_path"
+        fi
+    done > "$export_root/home-config-inventory.txt" || return 1
 
     for etc_file in /etc/fstab /etc/hostname /etc/hosts /etc/default/grub /etc/apt/sources.list; do
         if [[ -r "$etc_file" ]]; then
-            cp -a "$etc_file" "$export_root/etc/" 2>/dev/null || true
+            cp -a "$etc_file" "$export_root/etc/" 2>> "$export_root/export-errors.log" ||
+                printf 'WARNING: could not copy %s\n' "$etc_file" >> "$export_root/export-status.txt" || return 1
         fi
     done
 
     if [[ -d /etc/apt/sources.list.d ]]; then
-        mkdir -p "$export_root/etc/apt"
-        cp -a /etc/apt/sources.list.d "$export_root/etc/apt/" 2>/dev/null || true
+        mkdir -p "$export_root/etc/apt" || return 1
+        cp -a /etc/apt/sources.list.d "$export_root/etc/apt/" 2>> "$export_root/export-errors.log" ||
+            printf 'WARNING: could not copy APT sources\n' >> "$export_root/export-status.txt" || return 1
     fi
 
+    cat > "$export_root/RESTORE.txt" <<'EOF'
+Ubuntu migration checklist
+==========================
+This bundle accompanies the home snapshot with the same timestamp.
+Check export-status.txt and export-errors.log for unavailable or failed exports.
+home-config-inventory.txt records source presence, not successful copying.
+Check backup-excludes.txt and the rsync log for excluded or unreadable files.
+
+Restore documents first, then selected shell dotfiles, .config, .local/share,
+.local/bin, bin, and .gitconfig. Close applications before restoring settings.
+Preview home copies with rsync --dry-run; avoid --delete unless intentional.
+Restore .ssh and .gnupg securely, keeping restrictive permissions and ownership
+appropriate for the new account. Shell history and application profiles can
+contain secrets too. Store the backup on encrypted storage; this script does
+not encrypt it. A compressed tarball alone would not provide encryption.
+
+VS Code, Copilot, and Codex migration
+-----------------------------------
+Restore selected VS Code User settings, keybindings, snippets, and profiles
+first. Review vscode-extensions.txt and reinstall compatible extensions using
+their IDs (the text before @), rather than copying old extension binaries.
+The inventory covers the default profile of the current user's code CLI;
+export other profiles or remote editor environments separately if needed.
+Sign in to GitHub/OpenAI again instead of blindly restoring authentication.
+The default exclusions omit .codex/auth.json, caches, temporary IPC/lock files,
+and .vscode/extensions. Configuration, rules, skills, sessions, and database
+files (including SQLite WAL/SHM files) remain eligible for the home backup.
+Other retained settings and histories can contain credentials and private code.
+Older snapshots may still contain authentication and previously excluded data.
+
+Check running-ai-apps.txt and the backup log for live-database warnings.
+Process detection is best effort, not a guarantee that applications are closed.
+Close VS Code and Codex before a migration backup and before restoring history
+or databases. rsync does not create a transaction-consistent live database copy.
+Prefer selective restoration over replacing the entire editor profile.
+
+Review apt-manual-packages.txt for packages available on the new Ubuntu release.
+After configuring compatible repositories, selected packages can be installed
+with: sudo xargs -r -a apt-manual-packages.txt apt-get install
+snap-list.txt is an inventory, not a directly executable installation list.
+Review Flatpak remotes and reinstall selected apps from flatpak-apps.txt.
+
+Optionally restore GNOME preferences in the new user's desktop session:
+  dconf dump / > dconf-before-restore.ini
+  dconf load / < dconf-settings.ini
+This overwrites preferences; review release and extension compatibility first.
+Review user-crontab.txt before installing with crontab user-crontab.txt.
+Re-enable selected user services after updating machine-specific script paths.
+Use etc/ files as references; do not overwrite fstab, hostname, or APT sources
+wholesale on a new installation. This is not a full operating-system image.
+EOF
+    [[ -s "$export_root/RESTORE.txt" ]] || return 1
     return 0
+)
+
+save_restore_state() {
+    local export_root="$1"
+    local state_root="$2"
+    local snapshot_name="$3"
+    local staging_dir="$state_root/.incomplete-current"
+
+    [[ ! -e "$state_root/$snapshot_name" ]] || return 1
+    mkdir -p "$state_root" || return 1
+    rm -rf "$staging_dir" || return 1
+    mkdir -m 700 "$staging_dir" || return 1
+    cp -a "$export_root/." "$staging_dir/" || return 1
+    mv "$staging_dir" "$state_root/$snapshot_name" || return 1
 }
 # === END: Restore State Export ===
 
@@ -359,6 +454,7 @@ prune_old_snapshots() {
         snapshot_path="${snapshots[$index]}"
         snapshot_name="$(basename "$snapshot_path")"
         rm -rf "$snapshot_path"
+        rm -rf "$(dirname "$snapshots_dir")/state/$snapshot_name"
         log_to_file "Pruned snapshot: $snapshot_name"
     done
 
@@ -372,6 +468,9 @@ cleanup() {
 
     if [[ -n "${temp_snapshot_dir:-}" && -d "$temp_snapshot_dir" && ( "$DRY_RUN" == true || $exit_code -eq 0 ) ]]; then
         rm -rf "$temp_snapshot_dir"
+    fi
+    if [[ -n "${restore_state_dir:-}" && -d "$restore_state_dir" ]]; then
+        rm -rf "$restore_state_dir"
     fi
 
     if [[ $exit_code -ne 0 ]]; then
@@ -446,6 +545,13 @@ if [[ -z "$backup_dest" || -z "$log_dest" ]]; then
     exit 1
 fi
 
+for dependency in rsync flock findmnt; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+        log_error "Required command not installed: $dependency"
+        exit 1
+    fi
+done
+
 # Validate all paths
 validate_source || exit 1
 validate_non_negative_integer "$SNAPSHOT_RETENTION_COUNT" "Snapshot retention count" || exit 1
@@ -461,45 +567,11 @@ snapshot_root="$backup_data_root/snapshots"
 latest_link="$backup_data_root/latest"
 run_snapshot_name="$(date '+%Y%m%d_%H%M%S')"
 
-if ! mkdir -p "$snapshot_root"; then
-    log_error "Cannot create snapshot directory: $snapshot_root"
-    exit 1
-fi
-
 if [[ -L "$latest_link" || -d "$latest_link" ]]; then
     latest_snapshot="$(readlink -f "$latest_link" 2>/dev/null || true)"
 fi
 
-if [[ "$DRY_RUN" == true ]]; then
-    temp_snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/backup-dry-run.XXXXXX")"
-    rsync_target="$temp_snapshot_dir"
-else
-    temp_snapshot_dir="$snapshot_root/.incomplete-current"
-    rsync_target="$temp_snapshot_dir"
-
-    if ! mkdir -p "$rsync_target"; then
-        log_error "Cannot create staging snapshot directory: $rsync_target"
-        exit 1
-    fi
-fi
 # === END: Argument Validation ===
-
-# === START: Dependency Check ===
-if ! command -v rsync &> /dev/null; then
-    log_error "rsync is not installed. Please install it first."
-    exit 1
-fi
-
-if ! command -v flock &> /dev/null; then
-    log_error "flock is not installed. Please install util-linux first."
-    exit 1
-fi
-
-if ! command -v findmnt &> /dev/null; then
-    log_error "findmnt is not installed. Please install util-linux first."
-    exit 1
-fi
-# === END: Dependency Check ===
 
 # === START: Single-run Lock ===
 lock_file="$log_dest/${SCRIPT_NAME}.lock"
@@ -510,6 +582,17 @@ if ! flock -n 9; then
     exit 1
 fi
 # === END: Single-run Lock ===
+
+if [[ "$DRY_RUN" == true ]]; then
+    temp_snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/backup-dry-run.XXXXXX")"
+else
+    temp_snapshot_dir="$snapshot_root/.incomplete-current"
+    if ! mkdir -p "$temp_snapshot_dir"; then
+        log_error "Cannot create staging snapshot directory: $temp_snapshot_dir"
+        exit 1
+    fi
+fi
+rsync_target="$temp_snapshot_dir"
 
 # === START: Log File Setup ===
 logpath="$log_dest/${LOG_PREFIX}-$(date "$DATE_FORMAT").log"
@@ -541,13 +624,25 @@ log_to_file "Auto-unmount: $AUTO_UNMOUNT"
 log_to_file ""
 # === END: Log File Setup ===
 
-if [[ "$EXPORT_SYSTEM_STATE" == true ]]; then
-    restore_state_dir="$log_dest/restore-state-$run_snapshot_name"
+if active_ai_apps="$(running_ai_apps)"; then
+    if [[ -n "$active_ai_apps" ]]; then
+        log_info "WARNING: VS Code/Codex is running; close applications for a consistent migration backup"
+        log_to_file "WARNING: Live editor/AI databases may be inconsistent. Active processes: $(printf '%s' "$active_ai_apps" | paste -sd ',' -)"
+    fi
+else
+    log_to_file "WARNING: Unable to check VS Code/Codex processes; database consistency is unverified"
+fi
+
+if [[ "$EXPORT_SYSTEM_STATE" == true && "$DRY_RUN" == false ]]; then
+    restore_state_dir="$(mktemp -d "${TMPDIR:-/tmp}/backup-state.XXXXXX")"
     if export_system_state "$restore_state_dir"; then
         log_to_file "Restore state exported to: $restore_state_dir"
     else
-        log_to_file "WARNING: Failed to export restore state bundle"
+        log_to_file "ERROR: Failed to write restore state bundle; backup not started"
+        exit 1
     fi
+elif [[ "$DRY_RUN" == true ]]; then
+    log_to_file "Dry run: skipping machine-state export"
 fi
 
 # === START: Pre-backup Information ===
@@ -682,9 +777,16 @@ if (( unreadable_count > 0 )); then
 fi
 
 if [[ "$DRY_RUN" == false && "$backup_success" == true ]]; then
+    if [[ "$EXPORT_SYSTEM_STATE" == true ]]; then
+        if ! save_restore_state "$restore_state_dir" "$backup_data_root/state" "$run_snapshot_name"; then
+            log_to_file "ERROR: Could not save restore state on backup disk; snapshot not finalized"
+            exit 1
+        fi
+        log_to_file "Restore state saved to: $backup_data_root/state/$run_snapshot_name"
+    fi
     rm -rf "$final_snapshot_dir"
     mv "$temp_snapshot_dir" "$final_snapshot_dir"
-    ln -sfn "$final_snapshot_dir" "$latest_link"
+    ln -sfn "snapshots/$run_snapshot_name" "$latest_link"
     log_to_file "Snapshot finalized at: $final_snapshot_dir"
     prune_old_snapshots "$snapshot_root" "$SNAPSHOT_RETENTION_COUNT"
 elif [[ "$DRY_RUN" == true ]]; then
@@ -712,6 +814,9 @@ log_to_file "Log saved to: $logpath"
     echo "Backup root: $backup_data_root"
     echo "Snapshot root: $snapshot_root"
     echo "Snapshot name: $run_snapshot_name"
+    if [[ "$EXPORT_SYSTEM_STATE" == true && "$DRY_RUN" == false && "$backup_success" == true ]]; then
+        echo "Restore state: $backup_data_root/state/$run_snapshot_name"
+    fi
     echo "Dry run: $DRY_RUN"
     echo "Snapshot retention count: $SNAPSHOT_RETENTION_COUNT"
     echo "Unreadable source files: $unreadable_count"
@@ -725,7 +830,7 @@ log_info "Summary saved to: $summary_file"
 log_info "Total backup time: $duration_text"
 
 # === START: Auto-unmount ===
-if [[ "$AUTO_UNMOUNT" == true && "$backup_success" == true ]]; then
+if [[ "$AUTO_UNMOUNT" == true && "$backup_success" == true && "$DRY_RUN" == false ]]; then
     log_info "Auto-unmount enabled - attempting to unmount backup drive..."
     log_to_file ""
     log_to_file "=== AUTO-UNMOUNT ==="

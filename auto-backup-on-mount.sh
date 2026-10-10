@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-AUTO_BACKUP_SCRIPT="/home/mhasoba/Documents/Code_n_script/Bash/auto-backup.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTO_BACKUP_SCRIPT="$SCRIPT_DIR/auto-backup.sh"
 SENTINEL_DIR_NAME="MhasoBkp"
 USER_NAME="${USER:-$(id -un)}"
 
@@ -30,7 +31,7 @@ for root in "${search_roots[@]}"; do
             continue
         fi
 
-        device_path="$(findmnt -n -o SOURCE --target "$mount_point" 2>/dev/null || true)"
+        device_path="$(findmnt -n -o SOURCE --mountpoint "$mount_point" 2>/dev/null || true)"
 
         if [[ -n "$device_path" ]]; then
             exec "$AUTO_BACKUP_SCRIPT" "$device_path"

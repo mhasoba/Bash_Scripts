@@ -25,6 +25,8 @@ A curated collection of useful bash scripts.
 		- [docx-to-md.sh](#docx-to-mdsh)
 		- [markdown-to-pdf.sh](#markdown-to-pdfsh)
 		- [backup.sh](#backupsh)
+			- [Migrating to a fresh Ubuntu installation](#migrating-to-a-fresh-ubuntu-installation)
+			- [VS Code, Copilot, and Codex backups](#vs-code-copilot-and-codex-backups)
 		- [md2pdf.sh](#md2pdfsh)
 		- [Audio transcription tools](#audio-transcription-tools)
 		- [markdown-to-html.sh](#markdown-to-htmlsh)
@@ -66,7 +68,6 @@ A curated collection of useful bash scripts.
 - **`auto-backup-on-mount.sh`** - Helper for systemd user mount triggers; resolves the mounted device and launches `auto-backup.sh`
 - **`backup.sh`** - Snapshot-based backup utility with locking, mount verification, and dry-run support
 - **`backup-excludes.txt`** - Managed rsync exclusion list for `backup.sh`
-- **`backup-mount.sh`** - Backup with mount operations
 - **`sync-laptop-desktop.sh`** - Universal sync tool with VPN support (unison/rsync/rclone)
 
 ### 🎥 Media Processing
@@ -288,6 +289,19 @@ Notes:
 - The watched sentinel directory name is `MhasoBkp`, matching the existing check in `auto-backup.sh`.
 - The helper script may also be run manually after `chmod +x auto-backup-on-mount.sh`.
 - The service inherits GUI session variables from the user systemd manager, so re-run `systemctl --user import-environment ...` after login if `gnome-terminal` does not appear.
+- The launchers resolve sibling scripts relative to their own location. The installed service still needs the correct absolute installation path.
+- GNOME Terminal and `x-terminal-emulator` share the same confirmation prompt. If neither is available, the launcher reports an error rather than starting an unattended backup.
+
+Use only the user-systemd trigger. If an older installation has the legacy
+`/etc/udev/rules.d/99-auto-backup.rules` rule calling `auto-backup.sh`, review
+its contents and retire it on that machine (administrator access required):
+
+```bash
+sudo mv /etc/udev/rules.d/99-auto-backup.rules /etc/udev/rules.d/99-auto-backup.rules.disabled
+sudo udevadm control --reload-rules
+```
+
+Do not replay device events with `udevadm trigger` merely to test a backup.
 
 ### backup.sh
 
@@ -300,15 +314,18 @@ The backup script now writes versioned snapshots under a host-specific directory
 Within that tree it creates:
 - `snapshots/<timestamp>` for each completed backup
 - `latest` symlink pointing to the most recent completed snapshot
+- `state/<timestamp>` containing migration exports for the matching snapshot
 - `.incomplete-current` as a reusable staging directory for interrupted runs
 
 Key behavior:
-- Verifies the destination path is an active mount point before running.
+- Verifies the destination is on a separate device mounted under `/mnt`, `/media`, or `/run/media`. Ordinary internal-disk directories and root-device bind mounts are rejected; subdirectories of valid backup mounts are supported.
 - Uses a lock file to prevent concurrent backups.
 - Supports `--dry-run` for safe preview runs.
 - Keeps the newest 14 completed snapshots by default and prunes older ones after a successful backup.
 - Supports `--retain-count N` to change how many completed snapshots are kept. Use `0` to disable pruning.
-- Exports a restore-state bundle (package manifests, desktop settings, and selected `/etc` files) into the log directory by default.
+- Exports a restore-state bundle into temporary staging, then saves it under `state/<timestamp>` on the backup disk before finalizing the home snapshot. Temporary exports are removed on exit and matching disk bundles are pruned with snapshots. Existing local `restore-state-*` exports are left untouched.
+- Uses a relative `latest` link so new snapshots remain accessible after moving the backup disk to another mount path. Existing snapshots are unchanged.
+- Dry runs skip machine-state exports and do not write a state bundle to the disk.
 - Supports `--no-state-export` when you want a data-only backup run.
 - Stores logs and summary files in the log directory you pass as the second argument.
 - Uses `backup-excludes.txt` for rsync exclusions.
@@ -334,6 +351,90 @@ Examples:
 ```
 
 If you are using the automatic mount trigger, the backup lands in `MhasoBkp/` on the mounted drive, and `auto-backup-on-mount.sh` will launch `auto-backup.sh` when that mount is detected.
+
+#### Migrating to a fresh Ubuntu installation
+
+The home snapshot includes hidden files such as `.inputrc`, `.bashrc`, `.profile`,
+`.bash_profile`, `.bash_history`, `.zshrc`, `.zsh_history`, `.tmux.conf`, and
+`.gitconfig`, as well as `.config`, `.local/share`, `.local/bin`, `bin`, `.ssh`,
+and `.gnupg`, when present and not excluded. Cache paths are excluded, including
+known VS Code caches. Chrome profiles remain explicitly excluded; review
+`backup-excludes.txt` before relying on a profile being available for restoration.
+Virtual environments are not blanket-excluded because they may contain files
+you need; add specific rebuildable paths to your exclusion list if desired.
+
+For each completed run, `home/state/<timestamp>/` contains:
+
+- APT manual-package and package-version lists, Snap inventory, Flatpak apps and remotes.
+- A dconf export of the user's GNOME settings, user crontab, and enabled user-service inventory.
+- A VS Code extension/version inventory and best-effort running-editor/AI process report.
+- OS/account metadata, selected readable `/etc` files, and the exclusions used.
+- A source configuration inventory, export status/errors, and `RESTORE.txt` guidance.
+
+The configuration inventory reports presence, not successful backup coverage.
+Check the rsync log and export status for missing or unreadable data. Optional
+commands that are unavailable or fail are reported; inability to write or save
+the bundle prevents snapshot finalization. `--no-state-export` retains the
+existing data-only behaviour. No packages are installed during backup.
+
+Mount the drive and cancel the automatic backup prompt before restoring. Choose
+a completed timestamp from `home/snapshots/` (not `.incomplete-current`) and
+recover documents first, then selected application settings with applications
+closed. The matching `state/<timestamp>/RESTORE.txt` explains package and desktop
+settings restoration. Review package availability and repository compatibility
+on the new Ubuntu release; never restore `/etc` wholesale.
+
+Use encrypted storage for SSH/GPG keys, browser sessions, shell history, and
+other credentials. Bundle directories use mode `700`, but this is not encryption;
+the script does not encrypt the disk or create an additional credentials tarball.
+
+#### VS Code, Copilot, and Codex backups
+
+Settings, keybindings, snippets, profiles, and local Copilot/workspace storage
+under `.config/Code/User` remain included. Codex configuration, rules, skills,
+sessions, and databases under `.codex` remain included, including SQLite WAL and
+SHM files. Inclusion is subject to the exclusion list and successful file reads.
+
+The default policy excludes `.vscode/extensions` binaries, Codex cache/model
+cache files, temporary directories, IPC and transient lock files, and
+`.codex/auth.json`. It does not blanket-exclude database journals. Existing
+snapshots are unchanged and can still contain credentials until normal retention
+removes them; other retained profiles, histories, and project files may contain
+secrets too. Use encrypted storage regardless of the authentication exclusion.
+To deliberately include authentication, use a separate `EXCLUDE_FILE` without
+that rule only after considering credential exposure and encrypted storage.
+
+Migration bundles contain `vscode-extensions.txt`, exported using
+`code --list-extensions --show-versions`. Missing or failing CLIs are recorded
+in `export-status.txt`. This inventories the current user's default CLI profile;
+additional profiles and remote editor installations need separate inventories.
+No extensions are installed or applications stopped during backup.
+
+Before a migration backup, close VS Code and Codex. The script warns in the log
+if likely processes are running, even with `--no-state-export`, and records them
+in `running-ai-apps.txt` when state export is enabled. Detection is best effort;
+an empty process report does not guarantee a consistent live database copy.
+Plain rsync is not a transaction-consistent database backup.
+
+On the new installation, restore settings first, review the extension inventory,
+and reinstall compatible extensions by ID (the portion before `@`). Sign in to
+GitHub/OpenAI again. Restore histories or databases selectively with applications
+closed rather than replacing the entire editor profile blindly. Consult the
+matching migration bundle's `RESTORE.txt` for the rest of the restore checklist.
+
+Run isolated migration checks without mounting a disk or starting a real backup:
+
+```bash
+bash -n backup.sh test-backup.sh
+bash test-backup.sh
+```
+
+The checks cover exports, retention, mount validation, lock handling, dry runs,
+and both terminal launchers using mocked commands. AI settings/history retention
+and cache/authentication exclusions are checked with real rsync on temporary
+fixtures; extension discovery and process detection are mocked. A real-drive dry run can be
+performed with `backup.sh <mounted-backup-directory> <log-directory> --dry-run`;
+it writes local logs but does not create snapshots or unmount the disk.
 
 ### md2pdf.sh
 

@@ -17,6 +17,22 @@
 .gradle/caches/***
 .julia/compiled/***
 .julia/logs/***
+.config/Code/Cache/***
+.config/Code/CachedData/***
+.config/Code/GPUCache/***
+
+# Reinstall extensions from the exported inventory; retain editor user data
+/.vscode/extensions/***
+/.codex/cache/***
+/.codex/tmp/***
+/.codex/.tmp/***
+/.codex/ipc/***
+/.codex/thread-writer-locks/***
+/.codex/.sqlite-maintenance.lock
+/.codex/models_cache.json
+
+# Reauthenticate after migration; other retained files can still contain secrets
+/.codex/auth.json
 
 # Browser profiles (user requested)
 .config/google-chrome/***
