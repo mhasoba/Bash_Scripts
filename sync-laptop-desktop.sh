@@ -37,6 +37,8 @@ LOCK_FILE="/tmp/${SCRIPT_NAME}.lock"
 SYNC_TOOL="unison"
 VPN_CONNECTION=""
 VPN_REQUIRED="false"
+VPN_REQUIRED_OVERRIDE=""
+VPN_CONNECTION_OVERRIDE=""
 UNISON_PROFILE=""
 RSYNC_SOURCE=""
 RSYNC_DEST=""
@@ -99,8 +101,8 @@ OPTIONS:
     --profile PROFILE       Use named configuration profile
     --sync-tool TOOL        Sync tool: unison, rsync, rclone (default: unison)
     --vpn CONNECTION        VPN connection name for nmcli
-    --no-vpn               Disable VPN connection
-    --dry-run              Show what would be synced without doing it
+    --no-vpn               Use an existing VPN; do not connect or disconnect it
+    --dry-run              rsync/rclone preview; Unison connectivity check only
     --verbose, -v          Enable verbose output
     --quiet, -q            Suppress non-error output
     --retry-count NUM      Number of retry attempts (default: 3)
@@ -158,7 +160,7 @@ VPN_CONNECTION=""                    # nmcli connection name
 
 # Unison Settings (for bidirectional sync)
 UNISON_PROFILE="default"            # Unison profile name
-UNISON_OPTIONS="-sortbysize -batch -times -force newer -confirmbigdel=false"
+UNISON_OPTIONS="-sortbysize -times -batch=false -confirmbigdel=true"
 
 # Rsync Settings (for one-way sync)
 RSYNC_SOURCE="/home/user/Documents/"
@@ -189,10 +191,10 @@ EOFCONFIG
     cat > "$CONFIG_DIR/example-unison.conf" << 'EOFCONFIG'
 # Example Unison Profile
 SYNC_TOOL="unison"
-VPN_REQUIRED="true"
-VPN_CONNECTION="IC"
+VPN_REQUIRED="false"
+VPN_CONNECTION=""
 UNISON_PROFILE="MunroDesktop"
-UNISON_OPTIONS="-sortbysize -batch -times -force newer -confirmbigdel=false"
+UNISON_OPTIONS="-sortbysize -times -batch=false -confirmbigdel=true"
 STARTUP_DELAY="5"
 EOFCONFIG
 
@@ -373,8 +375,10 @@ run_hook() {
 
 # Unison sync function
 sync_unison() {
-    local options="${UNISON_OPTIONS:--sortbysize -batch -times}"
+    local options="${UNISON_OPTIONS:--sortbysize -times -batch=false -confirmbigdel=true}"
     local profile="$UNISON_PROFILE"
+    local option_args=()
+    local cmd=(unison)
     
     if [[ -z "$profile" ]]; then
         print_error "Unison profile not specified"
@@ -383,16 +387,22 @@ sync_unison() {
     
     print_info "Starting Unison sync with profile: $profile"
     
-    local cmd="unison $options"
+    read -r -a option_args <<< "$options"
+    cmd+=("${option_args[@]}")
     if [[ "$DRY_RUN" == "true" ]]; then
-        cmd="$cmd -testserver"
+        print_warning "Unison dry-run only checks server connectivity; it does not preview file changes"
+        cmd+=(-testserver)
     fi
-    cmd="$cmd $profile"
+    cmd+=("$profile")
     
-    print_info "Running: $cmd"
+    print_info "Running: ${cmd[*]}"
     
-    if eval "$cmd"; then
-        print_success "Unison sync completed successfully"
+    if "${cmd[@]}"; then
+        if [[ "$DRY_RUN" == "true" ]]; then
+            print_success "Unison connection check completed; no files synchronized"
+        else
+            print_success "Unison sync completed successfully"
+        fi
     else
         print_error "Unison sync failed"
         return 1
@@ -466,7 +476,9 @@ perform_sync() {
         print_info "Sync attempt $attempt of $max_attempts"
         
         # Run pre-sync hook
-        run_hook "$PRE_SYNC_HOOK" "pre-sync"
+        if [[ "$DRY_RUN" != true ]]; then
+            run_hook "$PRE_SYNC_HOOK" "pre-sync"
+        fi
         
         # Perform sync based on tool
         local sync_success=false
@@ -490,7 +502,9 @@ perform_sync() {
         
         if [[ "$sync_success" == "true" ]]; then
             # Run post-sync hook
-            run_hook "$POST_SYNC_HOOK" "post-sync"
+            if [[ "$DRY_RUN" != true ]]; then
+                run_hook "$POST_SYNC_HOOK" "post-sync"
+            fi
             return 0
         fi
         
@@ -527,12 +541,12 @@ parse_arguments() {
                 shift 2
                 ;;
             --vpn)
-                VPN_CONNECTION="$2"
-                VPN_REQUIRED="true"
+                VPN_CONNECTION_OVERRIDE="$2"
+                VPN_REQUIRED_OVERRIDE="true"
                 shift 2
                 ;;
             --no-vpn)
-                VPN_REQUIRED="false"
+                VPN_REQUIRED_OVERRIDE="false"
                 shift
                 ;;
             --dry-run)
@@ -607,6 +621,12 @@ main() {
     
     # Load configuration
     load_config "$CONFIG_FILE"
+    if [[ -n "$VPN_REQUIRED_OVERRIDE" ]]; then
+        VPN_REQUIRED="$VPN_REQUIRED_OVERRIDE"
+    fi
+    if [[ -n "$VPN_CONNECTION_OVERRIDE" ]]; then
+        VPN_CONNECTION="$VPN_CONNECTION_OVERRIDE"
+    fi
     
     # Check dependencies
     check_dependencies
@@ -633,7 +653,13 @@ main() {
     
     # Perform synchronization
     if perform_sync; then
-        print_success "Synchronization completed successfully"
+        if [[ "$SYNC_TOOL" == unison && "$DRY_RUN" == true ]]; then
+            print_success "Connection check completed; no file-change preview or synchronization performed"
+        elif [[ "$DRY_RUN" == true ]]; then
+            print_success "Dry run completed successfully"
+        else
+            print_success "Synchronization completed successfully"
+        fi
         exit 0
     else
         print_error "Synchronization failed"

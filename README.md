@@ -262,6 +262,66 @@ Notes and tips:
 - When running from other directories prefer the command name (no `./`), e.g. `find . -type f -name '*.md' -exec markdown-to-pdf {} +` so the tool is resolved via your `PATH`.
 ```
 
+### Laptop/desktop synchronization with Unison
+
+The local `~/.unison/MunroDesktop.prf` profile selects personal documents,
+desktop files, music, shell dotfiles, Git configuration, `bin`, templates,
+custom fonts, stable VS Code settings/keybindings/snippets/prompts, Codex
+rules/skills, and selected application preferences. Scripts in this repository
+are already covered by the selected `Documents` directory.
+
+Clementine and Inkscape are limited to preference files rather than entire
+state directories. Zotero, VirtualBox, Skype, Transmission, and whole JabRef
+state directories are no longer selected; JabRef's selected Java preferences
+remain. Files already present on either machine are not deleted just because
+their paths were removed from the profile.
+
+Keep editor workspace/global storage, Copilot/Codex conversations and databases,
+authentication, SSH/GPG keys, keyrings, caches, history, and generated Python
+launchers in `.local/bin` machine-local. Codex `config.toml` is not selected
+because it needs a separate check for credentials and machine-specific paths.
+These files can still be backed up without continuously merging them.
+
+Before the first sync, review `.bashrc`, `.profile`, `.gitconfig`, editor and
+application preferences for host-specific paths or credentials. Use conditional
+settings or separate per-machine overrides where needed. Close applications
+whose preferences are being synchronized. Betterbird remains in its separate
+profile and must be closed on both machines; prefer application-native sync
+for mail and Zotero libraries. Avoid concurrent edits to the same Git working
+tree on both machines; use Git remotes for collaborating on repository history.
+
+The installed `munro-desktop` launcher configuration and generated examples use
+`-batch=false -confirmbigdel=true`, without `-force newer`. Conflicting edits
+must be reviewed rather than resolved by timestamps. `UNISON_OPTIONS` accepts
+whitespace-separated arguments, not shell expressions or shell-quoted values;
+put complex settings such as SSH arguments in the Unison profile.
+
+```bash
+# Connect using OpenVPN 3 first (replace the path with your VPN configuration)
+openvpn3 session-start --config /path/to/vpn.ovpn
+
+# Interactive reconciliation; inspect conflicts before accepting changes
+./sync-laptop-desktop.sh --profile munro-desktop --no-vpn --verbose
+
+# Connectivity check ONLY: does not preview pending file changes
+./sync-laptop-desktop.sh --profile munro-desktop --no-vpn --dry-run --verbose
+
+# Isolated launcher checks: no network access or real synchronization
+bash -n sync-laptop-desktop.sh test-sync-laptop-desktop.sh
+bash test-sync-laptop-desktop.sh
+```
+
+The old NetworkManager IC VPN is no longer used for this workflow. Connect with
+OpenVPN 3 before launching sync; `--no-vpn` overrides legacy VPN settings in the
+launcher configuration and leaves your VPN session connected after sync.
+Generated Unison examples disable VPN management. Dry runs skip pre/post-sync
+hooks. Without `--no-vpn`, the launcher can still manage a configured
+NetworkManager VPN. The local Unison profile controls both roots
+when launched here; if initiating sync from the desktop, install equivalent
+preferences there with appropriate root ordering. These installed profiles live
+outside this repository. The empty `default.prf` is not a usable sync profile;
+select `munro-desktop` explicitly or configure another profile.
+
 ### Auto-backup on mount via systemd user units
 
 This repository includes a ready-to-enable systemd user `.path` + `.service` pair in `systemd-user/`.
