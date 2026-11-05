@@ -22,6 +22,7 @@
 .config/Code/GPUCache/***
 
 # Reinstall extensions from the exported inventory; retain editor user data
+# Keep the entire .agents directory, including shared skills, in the home backup.
 /.vscode/extensions/***
 /.codex/cache/***
 /.codex/tmp/***

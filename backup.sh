@@ -327,7 +327,7 @@ export_system_state() (
 
     cp "$EXCLUDE_FILE" "$export_root/backup-excludes.txt" || return 1
     cp /etc/os-release "$export_root/os-release" || return 1
-    for config_path in .inputrc .bashrc .bash_profile .profile .bash_aliases .bash_history .zshrc .zsh_history .tmux.conf .config .local/share .local/bin bin .gitconfig .ssh .gnupg .codex; do
+    for config_path in .inputrc .bashrc .bash_profile .profile .bash_aliases .bash_history .zshrc .zsh_history .tmux.conf .config .local/share .local/bin bin .gitconfig .ssh .gnupg .codex .agents; do
         if [[ -e "$SOURCE_DIR/$config_path" || -L "$SOURCE_DIR/$config_path" ]]; then
             printf 'PRESENT: %s\n' "$config_path"
         else
@@ -375,6 +375,11 @@ Sign in to GitHub/OpenAI again instead of blindly restoring authentication.
 The default exclusions omit .codex/auth.json, caches, temporary IPC/lock files,
 and .vscode/extensions. Configuration, rules, skills, sessions, and database
 files (including SQLite WAL/SHM files) remain eligible for the home backup.
+The entire .agents directory remains eligible for backup. Restore shared skills
+from .agents/skills to the new account's home directory, including each skill's
+SKILL.md and references/. VS Code Codex and Copilot share write-like-me here;
+restoring only .codex/skills or .copilot/skills will not restore this skill.
+Review any other .agents contents before restoring machine-specific state.
 Other retained settings and histories can contain credentials and private code.
 Older snapshots may still contain authentication and previously excluded data.
 

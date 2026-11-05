@@ -27,6 +27,11 @@ retained_paths=(
     .codex/state_5.sqlite
     .codex/state_5.sqlite-wal
     .codex/state_5.sqlite-shm
+    .agents/skills/write-like-me/SKILL.md
+    .agents/skills/write-like-me/references/style-guide.md
+    .agents/skills/write-like-me/references/writing-samples.md
+    .agents/skills/another-skill/SKILL.md
+    .agents/test-state.json
     Documents/project/.codex/auth.json
 )
 excluded_paths=(
@@ -77,6 +82,8 @@ grep -q 'test-package' "$fixture/export/apt-manual-packages.txt"
 grep -q 'WARNING: snap-list.txt' "$fixture/export/export-status.txt"
 grep -q 'PRESENT: .inputrc' "$fixture/export/home-config-inventory.txt"
 grep -q 'ABSENT: .zshrc' "$fixture/export/home-config-inventory.txt"
+grep -Fxq 'PRESENT: .agents' "$fixture/export/home-config-inventory.txt"
+grep -Fq 'from .agents/skills' "$fixture/export/RESTORE.txt"
 grep -q 'github.copilot-chat@1.0' "$fixture/export/vscode-extensions.txt"
 grep -q 'live databases may be inconsistent' "$fixture/export/export-status.txt"
 [[ "$(cat "$fixture/export/running-ai-apps.txt")" == code ]]
@@ -96,6 +103,12 @@ if grep -q 'live databases may be inconsistent' "$fixture/closed-apps/export-sta
     exit 1
 fi
 unset MOCK_AI_PROCESSES
+(
+    SOURCE_DIR="$fixture/home-without-shared-skill"
+    mkdir -p "$SOURCE_DIR"
+    export_system_state "$fixture/without-shared-skill"
+    grep -Fxq 'ABSENT: .agents' "$fixture/without-shared-skill/home-config-inventory.txt"
+)
 (
     code() { printf 'mock CLI failure\n' >&2; return 1; }
     export_system_state "$fixture/failed-cli"
@@ -205,6 +218,13 @@ for mode in normal dry-run data-only; do
         [[ -z "$(find "$fixture/$mode/logs" -maxdepth 1 -name 'restore-state-*' -print)" ]]
     else
         [[ -f "$backup_root/latest/.inputrc" ]]
+        for skill_file in SKILL.md references/style-guide.md references/writing-samples.md; do
+            cmp "$SOURCE_DIR/.agents/skills/write-like-me/$skill_file" \
+                "$backup_root/latest/.agents/skills/write-like-me/$skill_file"
+        done
+        cmp "$SOURCE_DIR/.agents/skills/another-skill/SKILL.md" \
+            "$backup_root/latest/.agents/skills/another-skill/SKILL.md"
+        cmp "$SOURCE_DIR/.agents/test-state.json" "$backup_root/latest/.agents/test-state.json"
         [[ "$(readlink "$backup_root/latest")" == snapshots/* ]]
         snapshot_name="$(basename "$(readlink "$backup_root/latest")")"
         if [[ "$mode" == normal ]]; then

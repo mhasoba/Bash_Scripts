@@ -270,6 +270,11 @@ custom fonts, stable VS Code settings/keybindings/snippets/prompts, Codex
 rules/skills, and selected application preferences. Scripts in this repository
 are already covered by the selected `Documents` directory.
 
+The profile also selects all of `~/.agents/skills`, so new shared skills are
+included automatically. This covers the `write-like-me` source used by VS Code
+Codex and Copilot, including `SKILL.md` and both reference files under
+`references/`. Other contents of `~/.agents` remain machine-local for sync.
+
 Clementine and Inkscape are limited to preference files rather than entire
 state directories. Zotero, VirtualBox, Skype, Transmission, and whole JabRef
 state directories are no longer selected; JabRef's selected Java preferences
@@ -454,6 +459,14 @@ Settings, keybindings, snippets, profiles, and local Copilot/workspace storage
 under `.config/Code/User` remain included. Codex configuration, rules, skills,
 sessions, and databases under `.codex` remain included, including SQLite WAL and
 SHM files. Inclusion is subject to the exclusion list and successful file reads.
+
+The entire `~/.agents` directory is also included, subject to exclusions and
+successful file reads, and the migration inventory records whether it is
+present. This covers existing and future shared skills under `.agents/skills`,
+including the `write-like-me` definition and reference files. Restore shared
+skills to the same relative location in the new account's home directory;
+restoring only `.codex/skills` or `.copilot/skills` would miss the shared source.
+Review other `.agents` contents before restoring machine-specific state.
 
 The default policy excludes `.vscode/extensions` binaries, Codex cache/model
 cache files, temporary directories, IPC and transient lock files, and
