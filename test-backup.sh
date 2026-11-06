@@ -188,6 +188,7 @@ rsync() {
         [[ "$argument" != --dry-run ]] || return 0
     done
     cp -a "${@: -2:1}." "${@: -1}"
+    return "${MOCK_RSYNC_EXIT_CODE:-0}"
 }
 export -f apt-mark dpkg-query snap flatpak systemctl crontab dconf code ps findmnt hostname rsync
 export SOURCE_DIR EXCLUDE_FILE
@@ -235,6 +236,26 @@ for mode in normal dry-run data-only; do
         fi
     fi
 done
+
+partial_backup_root="$fixture/partial/disk/backups/test-host/home"
+mkdir -p "$partial_backup_root/snapshots/20261009_120000" "$partial_backup_root/state/20261009_120000"
+printf 'known-good\n' > "$partial_backup_root/snapshots/20261009_120000/marker"
+ln -s snapshots/20261009_120000 "$partial_backup_root/latest"
+mkdir -p "$fixture/partial/disk" "$fixture/partial/logs"
+for rsync_status in 23 24; do
+    export MOCK_RSYNC_EXIT_CODE="$rsync_status"
+    if bash "$SCRIPT_DIR/backup.sh" "/mnt/..$fixture/partial/disk" "$fixture/partial/logs" --retain-count 1 > "$fixture/partial/exit-$rsync_status.log" 2>&1; then
+        printf 'Partial rsync exit %s must fail the backup\n' "$rsync_status" >&2
+        exit 1
+    else
+        [[ "$?" -eq "$rsync_status" ]]
+    fi
+    [[ "$(readlink "$partial_backup_root/latest")" == snapshots/20261009_120000 ]]
+    [[ -f "$partial_backup_root/snapshots/20261009_120000/marker" ]]
+    [[ -d "$partial_backup_root/state/20261009_120000" ]]
+    [[ -d "$partial_backup_root/snapshots/.incomplete-current" ]]
+done
+unset MOCK_RSYNC_EXIT_CODE
 
 staging_dir="$fixture/data-only/disk/backups/test-host/home/snapshots/.incomplete-current"
 mkdir -p "$staging_dir"

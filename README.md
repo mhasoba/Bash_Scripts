@@ -276,10 +276,10 @@ Codex and Copilot, including `SKILL.md` and both reference files under
 `references/`. Other contents of `~/.agents` remain machine-local for sync.
 
 Clementine and Inkscape are limited to preference files rather than entire
-state directories. Zotero, VirtualBox, Skype, Transmission, and whole JabRef
-state directories are no longer selected; JabRef's selected Java preferences
-remain. Files already present on either machine are not deleted just because
-their paths were removed from the profile.
+state directories. VirtualBox, Skype, and Transmission state directories, as well
+as JabRef, are no longer synchronized.
+Files already present on either machine are not deleted just because their paths
+were removed from the profile.
 
 Keep editor workspace/global storage, Copilot/Codex conversations and databases,
 authentication, SSH/GPG keys, keyrings, caches, history, and generated Python
@@ -292,12 +292,13 @@ application preferences for host-specific paths or credentials. Use conditional
 settings or separate per-machine overrides where needed. Close applications
 whose preferences are being synchronized. Betterbird remains in its separate
 profile and must be closed on both machines; prefer application-native sync
-for mail and Zotero libraries. Avoid concurrent edits to the same Git working
+for mail. Avoid concurrent edits to the same Git working
 tree on both machines; use Git remotes for collaborating on repository history.
 
-The installed `munro-desktop` launcher configuration and generated examples use
-`-batch=false -confirmbigdel=true`, without `-force newer`. Conflicting edits
-must be reviewed rather than resolved by timestamps. `UNISON_OPTIONS` accepts
+Both installed Unison profiles use `batch = false`, `auto = false`, and
+`confirmbigdel = true`, without `force = newer`. Review each proposed change
+before accepting it; whole-path deletions require extra confirmation. The
+`munro-desktop` launcher also enforces interactive, non-auto mode. `UNISON_OPTIONS` accepts
 whitespace-separated arguments, not shell expressions or shell-quoted values;
 put complex settings such as SSH arguments in the Unison profile.
 
@@ -308,8 +309,8 @@ openvpn3 session-start --config /path/to/vpn.ovpn
 # Interactive reconciliation; inspect conflicts before accepting changes
 ./sync-laptop-desktop.sh --profile munro-desktop --no-vpn --verbose
 
-# Connectivity check ONLY: does not preview pending file changes
-./sync-laptop-desktop.sh --profile munro-desktop --no-vpn --dry-run --verbose
+# Connectivity check ONLY: does not scan or preview pending file changes
+./sync-laptop-desktop.sh --profile munro-desktop --no-vpn --check-connection --verbose
 
 # Isolated launcher checks: no network access or real synchronization
 bash -n sync-laptop-desktop.sh test-sync-laptop-desktop.sh
@@ -319,8 +320,10 @@ bash test-sync-laptop-desktop.sh
 The old NetworkManager IC VPN is no longer used for this workflow. Connect with
 OpenVPN 3 before launching sync; `--no-vpn` overrides legacy VPN settings in the
 launcher configuration and leaves your VPN session connected after sync.
-Generated Unison examples disable VPN management. Dry runs skip pre/post-sync
-hooks. Without `--no-vpn`, the launcher can still manage a configured
+Generated Unison examples disable VPN management. Preview and connection-check
+modes skip pre/post-sync hooks. Unison has no dry-run mode in the installed
+version; `--check-connection` uses `-testserver` only. `--dry-run` is limited to
+rsync/rclone. Without `--no-vpn`, the launcher can still manage a configured
 NetworkManager VPN. The local Unison profile controls both roots
 when launched here; if initiating sync from the desktop, install equivalent
 preferences there with appropriate root ordering. These installed profiles live
@@ -394,7 +397,9 @@ Key behavior:
 - Supports `--no-state-export` when you want a data-only backup run.
 - Stores logs and summary files in the log directory you pass as the second argument.
 - Uses `backup-excludes.txt` for rsync exclusions.
-- Treats rsync exit code `24` as a warning instead of a hard failure.
+- Finalizes and prunes snapshots only after rsync exits successfully. Any
+	nonzero rsync result, including codes `23` and `24`, leaves the run in
+	`.incomplete-current`, preserves the previous `latest`, and returns failure.
 - Requires a snapshot-capable Linux filesystem on the backup disk. `ext4`, `xfs`, `btrfs`, and `zfs` are supported; `vfat`/FAT-style filesystems are not.
 - Fails fast with a clear message if the mounted backup disk cannot store symlinks/hardlinks.
 - If you want automatic launch on mount, keep the `MhasoBkp` directory on the drive. The automatic flow now writes the backup into that directory and uses it as the backup destination.
@@ -452,6 +457,10 @@ on the new Ubuntu release; never restore `/etc` wholesale.
 Use encrypted storage for SSH/GPG keys, browser sessions, shell history, and
 other credentials. Bundle directories use mode `700`, but this is not encryption;
 the script does not encrypt the disk or create an additional credentials tarball.
+Periodically restore a few files from a completed snapshot into a temporary
+directory and verify them before relying on the drive. Keep the drive unmounted
+between backups where practical; a second encrypted copy stored separately
+protects against drive loss or damage.
 
 #### VS Code, Copilot, and Codex backups
 

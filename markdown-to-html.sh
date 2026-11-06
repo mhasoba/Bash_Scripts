@@ -58,6 +58,7 @@ fi
 # Prefer pandoc for a robust conversion
 if command -v pandoc >/dev/null 2>&1; then
     tmpmd="$(mktemp --suffix=.md)"
+    trap 'rm -f -- "$tmpmd" "${tmpmd}.nofm"' EXIT
     # Normalize Unicode minus to ASCII, remove possible UTF-8 BOM,
     # and convert CRLF -> LF to avoid mismatches when detecting frontmatter.
     awk 'NR==1 { if (substr($0,1,3) == "\357\273\277") $0 = substr($0,4) } { gsub("−","-"); sub(/\r$/,""); print }' "$input" > "$tmpmd"
@@ -101,7 +102,6 @@ if command -v pandoc >/dev/null 2>&1; then
     fi
 
     pandoc "$tmpmd" -f markdown -t html -s "${title_arg[@]}" -o "$output"
-    rm -f "$tmpmd"
     echo "Wrote $output"
     exit 0
 fi

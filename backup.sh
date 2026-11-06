@@ -753,14 +753,6 @@ if [[ $rsync_exit_code -eq 0 ]]; then
     log_to_file "Status: SUCCESS"
     echo "✓ Backup completed successfully!" > "$summary_file"
     backup_success=true
-elif [[ $rsync_exit_code -eq 23 || $rsync_exit_code -eq 24 ]]; then
-    # 23/24 mean some files were skipped (unreadable or vanished); the rest of the
-    # tree is still consistent, so the snapshot is kept rather than discarded.
-    log_info "Backup completed with warnings (rsync exit code: $rsync_exit_code)"
-    log_to_file "Status: SUCCESS WITH WARNINGS (rsync exit code $rsync_exit_code)"
-    echo "⚠ Backup completed with warnings (rsync exit code $rsync_exit_code)" > "$summary_file"
-    backup_success=true
-    final_exit_code=0
 else
     log_error "Backup completed with errors (exit code: $rsync_exit_code)"
     log_to_file "Status: COMPLETED WITH ERRORS (exit code: $rsync_exit_code)"

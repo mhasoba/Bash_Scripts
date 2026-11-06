@@ -20,18 +20,20 @@ unison() { printf '%s\n' "$@" > "$fixture/arguments"; }
 
 UNISON_PROFILE=MunroDesktop
 DRY_RUN=false
+CHECK_CONNECTION=false
 unset UNISON_OPTIONS
 sync_unison > "$fixture/normal.log"
 grep -qx -- '-batch=false' "$fixture/arguments"
+grep -qx -- '-auto=false' "$fixture/arguments"
 grep -qx -- '-confirmbigdel=true' "$fixture/arguments"
 if grep -q -- '-force\|-testserver' "$fixture/arguments"; then
     printf 'Normal sync must not force a winner or test the server only\n' >&2
     exit 1
 fi
-DRY_RUN=true
+CHECK_CONNECTION=true
 sync_unison > "$fixture/check.log"
 grep -qx -- '-testserver' "$fixture/arguments"
-grep -q 'does not preview file changes' "$fixture/check.log"
+grep -q 'does not scan or preview file changes' "$fixture/check.log"
 grep -q 'no files synchronized' "$fixture/check.log"
 
 SYNC_TOOL=unison
@@ -41,10 +43,12 @@ POST_SYNC_HOOK=post
 run_hook() { printf '%s\n' "$1" >> "$fixture/hooks"; }
 perform_sync > "$fixture/check-hooks.log"
 [[ ! -e "$fixture/hooks" ]]
+CHECK_CONNECTION=false
 DRY_RUN=false
 perform_sync > "$fixture/normal-hooks.log"
 [[ "$(cat "$fixture/hooks")" == $'pre\npost' ]]
-DRY_RUN=true
+CHECK_CONNECTION=true
+DRY_RUN=false
 
 CONFIG_DIR="$fixture/config"
 DEFAULT_CONFIG="$CONFIG_DIR/default.conf"
@@ -52,7 +56,7 @@ LOG_DIR="$fixture/logs"
 create_config > "$fixture/generated.log"
 for config_path in "$DEFAULT_CONFIG" "$CONFIG_DIR/example-unison.conf"; do
     bash -n "$config_path"
-    grep -Fqx 'UNISON_OPTIONS="-sortbysize -times -batch=false -confirmbigdel=true"' "$config_path"
+    grep -Fqx 'UNISON_OPTIONS="-sortbysize -times -batch=false -auto=false -confirmbigdel=true"' "$config_path"
 done
 grep -Fqx 'VPN_REQUIRED="false"' "$CONFIG_DIR/example-unison.conf"
 grep -Fqx 'VPN_CONNECTION=""' "$CONFIG_DIR/example-unison.conf"
@@ -68,6 +72,11 @@ create_lock() { :; }
 check_connectivity() { :; }
 nmcli() { printf '%s\n' "$*" >> "$fixture/vpn-calls"; }
 printf '%s\n' 'VPN_REQUIRED="true"' 'VPN_CONNECTION="IC"' 'UNISON_PROFILE="MunroDesktop"' > "$fixture/legacy.conf"
+(main --config-file "$fixture/legacy.conf" --no-vpn --dry-run) > "$fixture/misleading-dry-run.log" 2>&1 && {
+    printf 'Unison --dry-run must be rejected\n' >&2
+    exit 1
+}
+grep -q 'Unison does not support --dry-run' "$fixture/misleading-dry-run.log"
 (main --config-file "$fixture/legacy.conf" --no-vpn) > "$fixture/external-vpn.log"
 [[ ! -e "$fixture/vpn-calls" ]]
 grep -qx -- 'MunroDesktop' "$fixture/arguments"
@@ -76,6 +85,7 @@ sleep() { :; }
 printf '%s\n' 'VPN_REQUIRED="false"' 'VPN_CONNECTION="IC"' 'UNISON_PROFILE="MunroDesktop"' > "$fixture/manual.conf"
 (main --config-file "$fixture/manual.conf" --vpn "New-VPN") > "$fixture/managed-vpn.log"
 [[ "$(cat "$fixture/vpn-calls")" == $'con up id New-VPN\ncon down id New-VPN' ]]
+CHECK_CONNECTION=false
 
 UNISON_PROFILE="profile; touch $fixture/should-not-exist"
 UNISON_OPTIONS="-times \$(touch $fixture/should-not-exist-options)"
