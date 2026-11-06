@@ -10,7 +10,7 @@ if [ $# -lt 1 ]; then
     echo "Arguments:"
     echo "  input_file     - Audio or video file to transcribe"
     echo "  output_format  - Output format: txt, srt, vtt, json, tsv (default: txt)"
-    echo "  model_size     - Whisper model: tiny, base, small, medium, large (default: base)"
+    echo "  model_size     - Whisper model: tiny, base, small, medium, large-v3 (default: large-v3)"
     echo ""
     echo "Examples:"
     echo "  $0 recording.mp3"
@@ -54,8 +54,8 @@ case "$OUTPUT_FORMAT" in
     *) echo "Error: Unsupported output format '$OUTPUT_FORMAT'." >&2; exit 1 ;;
 esac
 
-# Model size (default: base)
-MODEL_SIZE="${3:-base}"
+# Model size (default: large-v3)
+MODEL_SIZE="${3:-large-v3}"
 
 # Get the directory and filename without extension
 INPUT_DIR=$(dirname "$INPUT_FILE")
@@ -77,6 +77,7 @@ echo ""
 # Run whisper transcription
 if whisper "$INPUT_FILE" \
     --model "$MODEL_SIZE" \
+    --fp16 False \
     --output_format "$OUTPUT_FORMAT" \
     --output_dir "$OUTPUT_DIR" && [ -f "$OUTPUT_DIR/$FILENAME_NO_EXT.$OUTPUT_FORMAT" ]; then
 

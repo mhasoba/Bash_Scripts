@@ -24,10 +24,12 @@ A curated collection of useful bash scripts.
 		- [docx-to-pdf.sh](#docx-to-pdfsh)
 		- [docx-to-md.sh](#docx-to-mdsh)
 		- [markdown-to-pdf.sh](#markdown-to-pdfsh)
+		- [Auto-backup on mount via systemd user units](#auto-backup-on-mount-via-systemd-user-units)
 		- [backup.sh](#backupsh)
 			- [Migrating to a fresh Ubuntu installation](#migrating-to-a-fresh-ubuntu-installation)
 			- [VS Code, Copilot, and Codex backups](#vs-code-copilot-and-codex-backups)
 		- [md2pdf.sh](#md2pdfsh)
+		- [video-encode.sh](#video-encodesh)
 		- [Audio transcription tools](#audio-transcription-tools)
 		- [markdown-to-html.sh](#markdown-to-htmlsh)
 	- [📚 Documentation](#-documentation)
@@ -72,6 +74,7 @@ A curated collection of useful bash scripts.
 
 ### 🎥 Media Processing
 - **`video-trim.sh`** - Trim video files
+- **`video-encode.sh`** - Re-encode video as H.264 using the CPU or NVIDIA GPU
 - **`inkscape-export.sh`** - Inkscape export operations
 
 ### 🔧 File Management
@@ -140,6 +143,9 @@ sudo chmod +x /path/to/this/directory/*.sh
 
 # OCR convert scanned PDF to searchable PDF
 ./ocr-convert.sh document.pdf
+
+# Re-encode video with the NVIDIA hardware encoder
+./video-encode.sh --encoder cuda --quality 23 input.mp4 output.mp4
 
 # Extract text from multiple PDFs
 ./ocr-convert.sh --output text *.pdf
@@ -538,6 +544,17 @@ Examples:
 # Convert specific files
 ./md2pdf.sh README.md notes/meeting.md
 ```
+
+### video-encode.sh
+
+Re-encode the first video stream as H.264 and copy any audio streams. Subtitles and other streams are not included. The output container must support the copied audio codecs. Existing outputs are not overwritten.
+
+```bash
+./video-encode.sh input.mp4 output.mp4
+./video-encode.sh --encoder cuda --quality 23 input.mp4 output.mp4
+```
+
+The default encoder is CPU-based `libx264`; `--encoder cuda` uses NVIDIA NVENC and requires a working driver. Quality values range from 1 to 51, with lower values giving higher quality. CPU and GPU quality values are not directly equivalent, and re-encoding does not guarantee a smaller file.
 
 ### Audio transcription tools
 

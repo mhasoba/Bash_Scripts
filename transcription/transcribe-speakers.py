@@ -9,6 +9,8 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import threading
+import time
 
 
 def positive_integer(value):
@@ -18,21 +20,49 @@ def positive_integer(value):
     return number
 
 
+def vad_threshold(value):
+    number = float(value)
+    if not math.isfinite(number) or not 0 < number < 1:
+        raise argparse.ArgumentTypeError("must be a number greater than 0 and less than 1")
+    return number
+
+
+def chunk_length(value):
+    number = positive_integer(value)
+    if number > 30:
+        raise argparse.ArgumentTypeError("must not exceed 30 seconds")
+    return number
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="WhisperX word-aligned speaker transcription")
     parser.add_argument("input_file", type=Path)
-    parser.add_argument("model", nargs="?", default="base")
+    parser.add_argument("model", nargs="?", default="large-v3")
     parser.add_argument("num_speakers", nargs="?", type=positive_integer)
-    parser.add_argument("--device", choices=("cpu", "cuda", "auto"), default="cpu")
+    parser.add_argument("--num-speakers", dest="num_speakers_option", type=positive_integer,
+                        help="exact number of speakers, if known")
+    parser.add_argument("--device", choices=("cpu", "cuda", "auto"), default="auto")
     parser.add_argument("--compute-type", choices=("int8", "float16", "float32", "int8_float16"))
-    parser.add_argument("--batch-size", type=positive_integer, default=16)
+    parser.add_argument("--batch-size", type=positive_integer, default=4)
+    parser.add_argument("--chunk-size", type=chunk_length, default=30,
+                        help="maximum transcription chunk length in seconds (default: 30)")
     parser.add_argument("--threads", type=positive_integer, default=4)
     parser.add_argument("--language")
+    parser.add_argument("--vad-onset", type=vad_threshold, default=0.005,
+                        help="speech detection onset threshold (default: 0.005)")
+    parser.add_argument("--vad-offset", type=vad_threshold, default=0.002,
+                        help="speech detection offset threshold (default: 0.002)")
     parser.add_argument("--output-dir", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--diarization-model", default="pyannote/speaker-diarization-community-1")
     parser.add_argument("--transcription-only", action="store_true")
     parser.add_argument("--preflight-only", action="store_true", help=argparse.SUPPRESS)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.num_speakers_option is not None:
+        if args.num_speakers is not None:
+            parser.error("specify the number of speakers only once")
+        args.num_speakers = args.num_speakers_option
+    del args.num_speakers_option
+    return args
 
 
 def output_paths(args):
@@ -67,6 +97,8 @@ def preflight(args):
         raise ValueError("num_speakers cannot be used with --transcription-only")
     if args.device == "cpu" and args.compute_type in ("float16", "int8_float16"):
         raise ValueError("CPU mode requires int8 or float32 compute type")
+    if args.vad_offset > args.vad_onset:
+        raise ValueError("--vad-offset must not exceed --vad-onset")
     check_outputs(output_paths(args))
 
 
@@ -171,13 +203,70 @@ def release_memory(torch, device):
         torch.cuda.empty_cache()
 
 
+class StageProgress:
+    def __init__(self, label, interval=30):
+        self.label = label
+        self.interval = interval
+        self.started = time.monotonic()
+        self.percent = None
+        self.last_reported = -10
+        self.terminal = sys.stderr.isatty()
+        self.lock = threading.Lock()
+        self.stopped = threading.Event()
+        self.thread = None
+
+    def display(self, finished=False, failed=False):
+        elapsed = int(time.monotonic() - self.started)
+        status = "failed" if failed else "done" if finished else "working"
+        if self.percent is not None:
+            percent = 100 if finished else min(self.percent, 99)
+            filled = percent // 5
+            status = f"[{'#' * filled}{'-' * (20 - filled)}] {percent:3d}%"
+            if failed:
+                status += " failed"
+        line = f"{self.label}: {status} ({elapsed}s elapsed)"
+        print(f"\r\033[K{line}" if self.terminal else line,
+              end="\n" if not self.terminal or finished or failed else "",
+              file=sys.stderr, flush=True)
+
+    def update(self, value):
+        if not math.isfinite(value):
+            return
+        with self.lock:
+            percent = max(0, min(100, int(value)))
+            if self.percent is not None and percent <= self.percent:
+                return
+            self.percent = percent
+            if self.terminal or percent >= self.last_reported + 10:
+                self.display()
+                self.last_reported = percent
+
+    def heartbeat(self):
+        while not self.stopped.wait(self.interval):
+            with self.lock:
+                self.display()
+
+    def __enter__(self):
+        self.display()
+        self.thread = threading.Thread(target=self.heartbeat, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        self.stopped.set()
+        self.thread.join()
+        with self.lock:
+            self.display(finished=exception_type is None, failed=exception_type is not None)
+
+
 def run_pipeline(args):
     stage = "dependency validation"
     try:
-        import torch
-        import torchaudio
-        import whisperx
-        from whisperx.diarize import DiarizationPipeline
+        with StageProgress("Loading dependencies"):
+            import torch
+            import torchaudio
+            import whisperx
+            from whisperx.diarize import DiarizationPipeline
 
         if torch.__version__.split("+")[0] != torchaudio.__version__.split("+")[0]:
             raise RuntimeError("torch and torchaudio versions must match; reinstall the pinned requirements")
@@ -187,41 +276,52 @@ def run_pipeline(args):
             device = "cuda" if torch.cuda.is_available() else "cpu"
         if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("CUDA was requested but is not available")
-        compute_type = args.compute_type or ("float16" if device == "cuda" else "int8")
+        compute_type = args.compute_type or "float32"
         if device == "cpu" and compute_type in ("float16", "int8_float16"):
             raise ValueError("CPU mode requires int8 or float32 compute type")
         stage = "audio decoding"
         print("Loading mono 16 kHz audio...", flush=True)
-        audio = whisperx.load_audio(str(args.input_file))
+        with StageProgress("Audio decoding"):
+            audio = whisperx.load_audio(str(args.input_file))
         if len(audio) == 0:
             raise ValueError("Audio contains no samples")
         diarized = None
         if not args.transcription_only:
             stage = "speaker diarization (check HF_TOKEN and model agreements)"
             print(f"Identifying speakers with {args.diarization_model}...", flush=True)
-            diarizer = DiarizationPipeline(model_name=args.diarization_model,
-                                          token=os.environ["HF_TOKEN"], device=device)
+            with StageProgress("Loading diarization model"):
+                diarizer = DiarizationPipeline(model_name=args.diarization_model,
+                                              token=os.environ["HF_TOKEN"], device=device)
             kwargs = {"num_speakers": args.num_speakers} if args.num_speakers else {}
-            diarized = diarizer(audio, **kwargs)
-            if len(diarized) == 0:
-                raise RuntimeError("No speaker segments detected; use --transcription-only if intended")
+            with StageProgress("Diarization") as progress:
+                diarized = diarizer(audio, progress_callback=progress.update, **kwargs)
+                if len(diarized) == 0:
+                    raise RuntimeError("No speaker segments detected; use --transcription-only if intended")
             del diarizer
             release_memory(torch, device)
         stage = "speech recognition"
         print(f"Transcribing with {args.model} on {device} ({compute_type})...", flush=True)
-        model = whisperx.load_model(args.model, device, compute_type=compute_type,
-                                    language=args.language, threads=args.threads)
-        result = model.transcribe(audio, batch_size=args.batch_size)
+        with StageProgress("Loading transcription model"):
+            model = whisperx.load_model(args.model, device, compute_type=compute_type,
+                                        language=args.language, threads=args.threads,
+                                        vad_options={"vad_onset": args.vad_onset,
+                                                     "vad_offset": args.vad_offset})
+        with StageProgress("Transcription") as progress:
+            result = model.transcribe(audio, batch_size=args.batch_size, chunk_size=args.chunk_size,
+                                      progress_callback=progress.update)
+            if not result.get("segments"):
+                raise RuntimeError("No speech transcribed; no output files were written")
         language = result.get("language") or args.language
         del model
         release_memory(torch, device)
-        if not result.get("segments"):
-            raise RuntimeError("No speech transcribed; no output files were written")
         stage = f"forced alignment for language {language}"
         print("Aligning word timestamps...", flush=True)
-        aligner, metadata = whisperx.load_align_model(language_code=language, device=device)
-        result = whisperx.align(result["segments"], aligner, metadata, audio, device,
-                                return_char_alignments=False)
+        with StageProgress("Loading alignment model"):
+            aligner, metadata = whisperx.load_align_model(language_code=language, device=device)
+        with StageProgress("Alignment") as progress:
+            result = whisperx.align(result["segments"], aligner, metadata, audio, device,
+                                    return_char_alignments=False,
+                                    progress_callback=progress.update)
         del aligner, metadata
         release_memory(torch, device)
         if diarized is not None:
@@ -232,7 +332,8 @@ def run_pipeline(args):
         result["run_metadata"] = {
             "input_file": str(args.input_file), "model": args.model, "device": device,
             "output_dir": str(output_paths(args)["json"].parent),
-            "compute_type": compute_type, "batch_size": args.batch_size,
+            "compute_type": compute_type, "batch_size": args.batch_size, "chunk_size": args.chunk_size,
+            "vad_onset": args.vad_onset, "vad_offset": args.vad_offset,
             "diarization": not args.transcription_only,
             "diarization_model": None if args.transcription_only else args.diarization_model,
             "num_speakers": args.num_speakers,

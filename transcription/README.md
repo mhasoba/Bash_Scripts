@@ -14,6 +14,7 @@ Example plain Whisper transcription from the repository root:
 ```
 
 The output is written beside the input. Existing output files are not overwritten.
+The OpenAI Whisper wrapper defaults to `large-v3` and full-precision inference. The CLI selects CUDA automatically when its own Python environment can use it; otherwise it uses the CPU. Pass a model name as the third argument to choose a smaller model.
 
 ## Prerequisites
 
@@ -31,18 +32,27 @@ From the repository root:
 ```bash
 ./transcription/transcribe-speakers-venv.sh recording.m4a
 ./transcription/transcribe-speakers-venv.sh recording.m4a medium 2 --device cuda --batch-size 8
+./transcription/transcribe-speakers-venv.sh recording.m4a --num-speakers 2 --chunk-size 15
 ./transcription/transcribe-speakers-venv.sh recording.m4a --transcription-only
 ```
 
 The first run creates `~/whisperx-env` and installs the package versions pinned in `whisperx-requirements.txt`. Existing environments are not upgraded automatically. Set `WHISPERX_VENV` to use a different virtualenv. The scripts require no activation; to activate it manually, use `source ~/whisperx-env/bin/activate`.
 
-Options include `--device cpu|cuda|auto`, `--compute-type`, `--batch-size`, `--threads`, `--language`, and `--diarization-model`. Defaults are CPU, `int8`, batch size 16, and 4 CPU threads. CUDA defaults to `float16`. The direct wrapper `transcribe-with-speakers.sh` expects WhisperX to already be available to `WHISPERX_PYTHON`.
+TorchCodec 0.7 requires FFmpeg 4-7 shared libraries. If the system has a newer FFmpeg, the wrapper also checks for optional FFmpeg 7 libraries in `~/whisperx-env/ffmpeg7/av.libs` (or the equivalent under `WHISPERX_VENV`). These libraries are not installed automatically. A TorchCodec warning about missing libraries does not by itself stop this pipeline: WhisperX decodes the audio first and passes the waveform to diarization.
+
+The default model is `large-v3`, with automatic CUDA selection when available, `float32` inference, batch size 4, and 4 CPU threads. The model is downloaded on first use and requires substantial disk space and memory; CPU runs may be slow. Options include `--device cpu|cuda|auto`, `--compute-type`, `--batch-size`, `--threads`, `--language`, and `--diarization-model`. For a faster CUDA run, for example, use `medium --device cuda --compute-type float16 --batch-size 8`. The direct wrapper `transcribe-with-speakers.sh` expects WhisperX to already be available to `WHISPERX_PYTHON`.
+
+`--chunk-size` sets the maximum transcription chunk length from 1 to 30 seconds; the default is 30. Shorter chunks can recover words in some recordings but can also lose context or introduce errors, so compare a representative passage with the audio. The chosen value is recorded in JSON. Use `--num-speakers` only when the exact number is known; forcing the wrong count can misattribute speech. The positional speaker-count argument remains supported.
+
+The voice-activity detector defaults to sensitive thresholds, `--vad-onset 0.005 --vad-offset 0.002`, to reduce missed quiet speech. These values may also classify noise or silence as speech, causing hallucinated text; compare the result with the recording. The offset must not exceed the onset, and both must be greater than 0 and less than 1. The previous, less sensitive defaults can be restored with `--vad-onset 0.5 --vad-offset 0.363`. The selected thresholds are recorded in the JSON output.
+
+Diarization, transcription and alignment show separate progress bars when callbacks are available. Model loading and decoding show elapsed-time updates instead. When output is redirected, progress is written as periodic lines to standard error. These are stage-specific updates, not an estimate of total time remaining.
 
 For a single file, outputs are written beside the input by default. `--transcription-only` skips diarization and writes `_transcript` outputs. Existing outputs are never overwritten.
 
 ## Batch a Directory
 
-The batch wrapper searches recursively, processes one recording at a time, and continues after individual failures. It writes results to a `transcripts/` subdirectory beside each input. First preview the selected inputs and destination paths:
+The batch wrapper searches recursively, processes one recording at a time, displays each file's position among the discovered recordings, and continues after individual failures. It writes results to a `transcripts/` subdirectory beside each input. First preview the selected inputs and destination paths:
 
 ```bash
 ./transcription/transcribe-batch.sh ~/Desktop/NOMIS_Workshop_2026/recordings --dry-run

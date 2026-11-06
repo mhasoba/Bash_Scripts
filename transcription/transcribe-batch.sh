@@ -138,7 +138,9 @@ if ! "$SCRIPT_DIR/transcribe-speakers-venv.sh" "$FIRST_PENDING" \
     exit 1
 fi
 
+FILE_INDEX=0
 for input_file in "${AUDIO_FILES[@]}"; do
+    ((FILE_INDEX += 1))
     output_dir="$(output_dir_for "$input_file")"
     output_base="$(output_base_for "$input_file")"
     output_count=0
@@ -151,7 +153,7 @@ for input_file in "${AUDIO_FILES[@]}"; do
         continue
     fi
 
-    printf '\nTranscribing: %s\nOutputs: %s\n' "$input_file" "$output_dir"
+    printf '\nRecording %d/%d: %s\nOutputs: %s\n' "$FILE_INDEX" "${#AUDIO_FILES[@]}" "$input_file" "$output_dir"
     if "$SCRIPT_DIR/transcribe-speakers-venv.sh" "$input_file" \
             "${TRANSCRIBE_ARGS[@]}" --output-dir "$output_dir"; then
         ((COMPLETED += 1))

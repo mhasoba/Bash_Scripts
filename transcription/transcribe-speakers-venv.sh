@@ -22,4 +22,8 @@ if ! "$VENV_DIR/bin/python" -c 'from importlib.metadata import version; version(
     "$VENV_DIR/bin/python" -m pip install -r "$SCRIPT_DIR/whisperx-requirements.txt" || exit 1
 fi
 
+if [[ -d "$VENV_DIR/ffmpeg7/av.libs" ]]; then
+    export LD_LIBRARY_PATH="$VENV_DIR/ffmpeg7/av.libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
 WHISPERX_PYTHON="$VENV_DIR/bin/python" exec "$SCRIPT_DIR/transcribe-with-speakers.sh" "$@"
