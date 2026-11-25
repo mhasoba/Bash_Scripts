@@ -62,7 +62,7 @@ A curated collection of useful bash scripts.
 - **`ocr-convert.sh`** - 🌟 Universal OCR tool (PDF/images → searchable PDF/text, multi-language)
 
 ### 🎙️ Audio Transcription
-- **[`transcription/transcribe-audio.sh`](transcription/transcribe-audio.sh)** - OpenAI Whisper CLI alternative for plain transcription
+- **[`transcription/transcribe-audio.sh`](transcription/transcribe-audio.sh)** - Speaker-labeled WhisperX transcription by default; plain Whisper requires `--no-diarization`
 - **[`transcription/`](transcription/README.md)** - WhisperX pipeline for speaker-labeled transcription, including batch processing
 
 ### 💾 Backup & Synchronization

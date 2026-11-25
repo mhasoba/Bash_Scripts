@@ -1,20 +1,27 @@
 # WhisperX Transcription
 
-This subproject contains two local transcription paths: OpenAI Whisper for straightforward transcripts in several output formats, and WhisperX for word alignment and speaker diarization. The WhisperX batch runner processes files sequentially.
+All transcription entry points use WhisperX word alignment and speaker diarization by default. Plain transcription requires an explicit opt-out. The WhisperX batch runner processes files sequentially.
 
 ## Choose a Transcriber
 
-- **OpenAI Whisper** (`transcribe-audio.sh`): use for a single file and a plain TXT, SRT, VTT, JSON, or TSV transcript. It does not require a Hugging Face token. Install `openai-whisper` and `ffmpeg` separately.
-- **WhisperX** (`transcribe-speakers-venv.sh`): use when you want word-level timestamps, speaker labels, or batch processing. Its `--transcription-only` mode skips diarization and does not require a Hugging Face token, but still runs alignment.
+- **Default entry point** (`transcribe-audio.sh`): delegates to `transcribe-speakers-venv.sh` for speaker-labeled TXT, SRT and JSON outputs together. It accepts the same model, speaker-count and WhisperX options.
+- **WhisperX** (`transcribe-speakers-venv.sh`, `transcribe-with-speakers.sh`, `transcribe-batch.sh`): also diarizes by default. `--transcription-only` explicitly skips diarization but retains alignment.
+- **Plain OpenAI Whisper**: explicitly use `transcribe-audio.sh --no-diarization` for a plain TXT, SRT, VTT, JSON or TSV transcript. This mode does not require a Hugging Face token; install `openai-whisper` and `ffmpeg` separately.
 
-Example plain Whisper transcription from the repository root:
+Examples from the repository root:
 
 ```bash
-./transcription/transcribe-audio.sh recording.mp3 vtt medium
+# Default: large-v3, alignment and speaker labels
+./transcription/transcribe-audio.sh recording.mp3
+./transcription/transcribe-audio.sh recording.mp3 large-v3 --device cuda --num-speakers 2
+
+# Explicitly request plain Whisper output
+./transcription/transcribe-audio.sh --no-diarization recording.mp3 vtt medium
 ```
 
-The output is written beside the input. Existing output files are not overwritten.
-The OpenAI Whisper wrapper defaults to `large-v3` and full-precision inference. The CLI selects CUDA automatically when its own Python environment can use it; otherwise it uses the CPU. Pass a model name as the third argument to choose a smaller model.
+Outputs are written beside the input and are never overwritten. Default outputs use the `_speakers` suffix. Missing tokens, model access failures and diarization errors fail explicitly; they never trigger a silent fallback to plain text.
+The old `transcribe-audio.sh input [format] [model]` interface now requires the leading `--no-diarization` flag; format arguments without that opt-out are rejected with migration guidance.
+Both paths default to `large-v3` and full-precision inference, selecting CUDA automatically when available in their Python environment; otherwise they use the CPU. Model size controls recognition accuracy, not whether speaker identification runs.
 
 ## Prerequisites
 

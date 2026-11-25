@@ -1,23 +1,60 @@
 #!/bin/bash
 
-# Script to transcribe audio/video recordings using OpenAI Whisper
-# Usage: ./transcription/transcribe-audio.sh input_file [output_format] [model_size]
+# Transcribe with speaker diarization by default; plain Whisper is opt-in.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check if input file is provided
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <input_file> [output_format] [model_size]"
-    echo ""
-    echo "Arguments:"
-    echo "  input_file     - Audio or video file to transcribe"
-    echo "  output_format  - Output format: txt, srt, vtt, json, tsv (default: txt)"
-    echo "  model_size     - Whisper model: tiny, base, small, medium, large-v3 (default: large-v3)"
-    echo ""
-    echo "Examples:"
-    echo "  $0 recording.mp3"
-    echo "  $0 recording.mp4 srt"
-    echo "  $0 recording.wav txt medium"
+usage() {
+    cat <<EOF
+Usage: $0 <input_file> [model_size] [num_speakers] [WhisperX options...]
+       $0 --no-diarization <input_file> [output_format] [model_size]
+
+Default: WhisperX large-v3, full precision, automatic CUDA selection,
+word alignment and speaker diarization. Writes _speakers.txt, .srt and .json.
+Requires ffmpeg and HF_TOKEN with access to the diarization model.
+Errors never silently fall back to plain transcription.
+
+WhisperX options include --device, --compute-type, --num-speakers and
+--transcription-only (explicitly skip diarization but retain alignment).
+Use transcribe-speakers-venv.sh --help for all WhisperX options.
+
+--no-diarization explicitly uses plain OpenAI Whisper (installed separately).
+Plain output formats: txt (default), srt, vtt, json, tsv.
+
+Examples:
+  $0 recording.m4a
+  $0 recording.m4a large-v3 --device cuda --num-speakers 2
+  $0 --no-diarization recording.m4a vtt medium
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+elif [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    usage
+    exit 0
+fi
+
+if [[ "$1" != "--no-diarization" ]]; then
+    case "${2:-}" in
+        txt|srt|vtt|json|tsv)
+            echo "Error: Diarization is now the default and writes TXT, SRT and JSON together." >&2
+            echo "Use: $0 <input_file> [model_size] [WhisperX options...]" >&2
+            echo "For the old plain-format interface, explicitly pass --no-diarization before the input." >&2
+            exit 1
+            ;;
+    esac
+    echo "Mode: WhisperX with speaker diarization (unless --transcription-only is requested)."
+    exec bash "$SCRIPT_DIR/transcribe-speakers-venv.sh" "$@"
+fi
+
+shift
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+    echo "Error: Plain transcription expects an input and optional output format and model." >&2
+    usage >&2
     exit 1
 fi
+echo "Mode: plain OpenAI Whisper; speaker diarization explicitly disabled."
 
 # Check if whisper is installed
 if ! command -v whisper &> /dev/null; then

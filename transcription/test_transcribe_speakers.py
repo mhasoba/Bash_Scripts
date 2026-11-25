@@ -257,13 +257,41 @@ class TranscriptionTests(unittest.TestCase):
                                WHISPER_ARGS=str(arguments), WHISPER_OUTPUT=str(output))
             wrapper = Path(__file__).with_name("transcribe-audio.sh")
             for model, extra in (("large-v3", []), ("base", ["txt", "base"])):
-                process = subprocess.run(["bash", str(wrapper), str(audio), *extra],
+                process = subprocess.run(["bash", str(wrapper), "--no-diarization", str(audio), *extra],
                                          env=environment, capture_output=True, text=True, check=False)
                 self.assertEqual(process.returncode, 0, process.stderr)
                 recorded = arguments.read_text().splitlines()
                 self.assertEqual(recorded[recorded.index("--model") + 1], model)
                 self.assertEqual(recorded[recorded.index("--fp16") + 1], "False")
                 output.unlink()
+
+    def test_audio_entry_point_defaults_to_diarization_and_propagates_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            wrapper = root / "transcribe-audio.sh"
+            shutil.copy2(Path(__file__).with_name("transcribe-audio.sh"), wrapper)
+            runner = root / "transcribe-speakers-venv.sh"
+            runner.write_text("#!/bin/bash\nprintf '%s\\n' \"$@\" > \"$RECORDED_ARGS\"\nexit \"$RUNNER_STATUS\"\n")
+            arguments = root / "arguments"
+            environment = dict(os.environ, RECORDED_ARGS=str(arguments), RUNNER_STATUS="0")
+            for extra in ([], ["large-v3", "--device", "cuda", "--num-speakers", "2"]):
+                expected = ["audio file.m4a", *extra]
+                process = subprocess.run(["bash", str(wrapper), *expected], env=environment,
+                                         capture_output=True, text=True, check=False)
+                self.assertEqual(process.returncode, 0, process.stderr)
+                self.assertEqual(arguments.read_text().splitlines(), expected)
+            environment["RUNNER_STATUS"] = "7"
+            process = subprocess.run(["bash", str(wrapper), "audio file.m4a"], env=environment,
+                                     capture_output=True, text=True, check=False)
+            self.assertEqual(process.returncode, 7)
+
+    def test_audio_entry_point_rejects_implicit_plain_format(self):
+        wrapper = Path(__file__).with_name("transcribe-audio.sh")
+        process = subprocess.run(["bash", str(wrapper), "audio.m4a", "vtt", "medium"],
+                                 capture_output=True, text=True, check=False)
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn("--no-diarization", process.stderr)
+        self.assertIn("Diarization is now the default", process.stderr)
 
     def test_batch_dry_run_handles_spaces_recursion_and_resume(self):
         with tempfile.TemporaryDirectory() as directory:
