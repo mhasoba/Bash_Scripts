@@ -28,8 +28,10 @@ class TranscriptionTests(unittest.TestCase):
             args = transcription.parse_args([str(Path(directory) / "recording.m4a")])
             paths = transcription.output_paths(args)
             transcription.publish_outputs(paths, {"speaker_turns": turns})
-            for kind in ("txt", "srt"):
-                self.assertIn("SPEAKER_01", paths[kind].read_text())
+            self.assertIn("Speaker 1: Hello!", paths["txt"].read_text())
+            self.assertIn("Speaker 2: Goodbye.", paths["txt"].read_text())
+            self.assertIn("[Speaker 2] Goodbye.", paths["srt"].read_text())
+            self.assertIn('"speaker": "SPEAKER_01"', paths["json"].read_text())
 
     def test_untimed_and_unlabelled_words_are_preserved(self):
         turns = transcription.speaker_turns([{
@@ -110,6 +112,7 @@ class TranscriptionTests(unittest.TestCase):
     def test_accuracy_defaults_and_overrides(self):
         args = transcription.parse_args(["audio.m4a"])
         self.assertEqual((args.model, args.device, args.batch_size), ("large-v3", "auto", 4))
+        self.assertFalse(args.transcription_only)
         self.assertEqual(args.chunk_size, 30)
         self.assertEqual((args.vad_onset, args.vad_offset), (0.005, 0.002))
         args = transcription.parse_args(["audio.m4a", "base", "--device", "cpu",

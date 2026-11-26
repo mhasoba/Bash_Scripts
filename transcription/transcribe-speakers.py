@@ -168,13 +168,24 @@ def speaker_turns(segments):
     return turns
 
 
+def display_speaker_labels(turns):
+    labels = {}
+    for turn in turns:
+        speaker = turn["speaker"]
+        if speaker != "UNKNOWN" and speaker not in labels:
+            labels[speaker] = f"Speaker {len(labels) + 1}"
+    return labels
+
+
 def publish_outputs(paths, result):
     turns = result["speaker_turns"]
+    labels = display_speaker_labels(turns)
     text = "".join(f"[{timestamp(turn['start'])} - {timestamp(turn['end'])}] "
-                   f"{turn['speaker']}: {turn['text']}\n" for turn in turns)
+                   f"{labels.get(turn['speaker'], turn['speaker'])}: {turn['text']}\n"
+                   for turn in turns)
     subtitles = "".join(f"{index}\n{timestamp(turn['start'], True)} --> "
                         f"{timestamp(max(turn['end'], turn['start'] + 0.001), True)}\n"
-                        f"[{turn['speaker']}] {turn['text']}\n\n"
+                        f"[{labels.get(turn['speaker'], turn['speaker'])}] {turn['text']}\n\n"
                         for index, turn in enumerate(turns, 1))
     contents = {"txt": text, "srt": subtitles,
                 "json": json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"}

@@ -2,25 +2,26 @@
 
 All transcription entry points use WhisperX word alignment and speaker diarization by default. Plain transcription requires an explicit opt-out. The WhisperX batch runner processes files sequentially.
 
-## Choose a Transcriber
+## Transcribe a File
 
-- **Default entry point** (`transcribe-audio.sh`): delegates to `transcribe-speakers-venv.sh` for speaker-labeled TXT, SRT and JSON outputs together. It accepts the same model, speaker-count and WhisperX options.
-- **WhisperX** (`transcribe-speakers-venv.sh`, `transcribe-with-speakers.sh`, `transcribe-batch.sh`): also diarizes by default. `--transcription-only` explicitly skips diarization but retains alignment.
-- **Plain OpenAI Whisper**: explicitly use `transcribe-audio.sh --no-diarization` for a plain TXT, SRT, VTT, JSON or TSV transcript. This mode does not require a Hugging Face token; install `openai-whisper` and `ffmpeg` separately.
-
-Examples from the repository root:
+Use the default entry point for speaker-labeled TXT, SRT and JSON outputs:
 
 ```bash
-# Default: large-v3, alignment and speaker labels
 ./transcription/transcribe-audio.sh recording.mp3
-./transcription/transcribe-audio.sh recording.mp3 large-v3 --device cuda --num-speakers 2
+./transcription/transcribe-audio.sh recording.mp3 --device cuda --num-speakers 2
+```
 
-# Explicitly request plain Whisper output
+It uses WhisperX with word alignment and speaker diarization by default. The virtual environment is set up on first use. Speaker labels in TXT/SRT are numbered by first appearance; JSON retains WhisperX's original speaker IDs.
+
+To explicitly skip diarization but retain alignment, pass `--transcription-only`. To request plain OpenAI Whisper output instead, use `--no-diarization`:
+
+```bash
+./transcription/transcribe-audio.sh recording.mp3 --transcription-only
 ./transcription/transcribe-audio.sh --no-diarization recording.mp3 vtt medium
 ```
 
-Outputs are written beside the input and are never overwritten. Default outputs use the `_speakers` suffix. Missing tokens, model access failures and diarization errors fail explicitly; they never trigger a silent fallback to plain text.
-The old `transcribe-audio.sh input [format] [model]` interface now requires the leading `--no-diarization` flag; format arguments without that opt-out are rejected with migration guidance.
+Plain mode writes one selected format and does not require a Hugging Face token; install `openai-whisper` and `ffmpeg` separately. Outputs are written beside the input and are never overwritten. Diarization token, model-access and processing errors fail explicitly; they never trigger a silent fallback to plain text.
+The old `transcribe-audio.sh input [format] [model]` interface requires the leading `--no-diarization` flag; format arguments without that opt-out are rejected with migration guidance.
 Both paths default to `large-v3` and full-precision inference, selecting CUDA automatically when available in their Python environment; otherwise they use the CPU. Model size controls recognition accuracy, not whether speaker identification runs.
 
 ## Prerequisites
